@@ -1,0 +1,674 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  USER
+  ADMIN
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  DELETED
+}
+
+enum Difficulty {
+  EASY
+  MEDIUM
+  HARD
+}
+
+enum SubmissionStatus {
+  PENDING
+  RUNNING
+  ACCEPTED
+  WRONG_ANSWER
+  TIME_LIMIT_EXCEEDED
+  MEMORY_LIMIT_EXCEEDED
+  RUNTIME_ERROR
+  COMPILATION_ERROR
+  INTERNAL_ERROR
+}
+
+enum LegacyLanguage {
+  CPP
+  JAVA
+  PYTHON
+  JAVASCRIPT
+}
+
+enum ExecutorType {
+  MOCK
+  DOCKER
+  JUDGE0
+}
+
+enum LanguageCategory {
+  GENERAL_PURPOSE
+  SYSTEMS
+  SCRIPTING
+  FUNCTIONAL
+  JVM
+  DOTNET
+  DATABASE
+  SHELL
+  EDUCATIONAL
+  OTHER
+}
+
+enum ProblemVisibility {
+  PUBLIC
+  PRIVATE
+  ARCHIVED
+}
+
+enum CheckerMode {
+  STANDARD
+  CUSTOM_CHECKER
+}
+
+enum ContestStatus {
+  UPCOMING
+  LIVE
+  ENDED
+}
+
+enum ProblemAssetType {
+  GENERATOR
+  REFERENCE_SOLUTION
+  VALIDATOR
+  CHECKER
+}
+
+enum GenerationJobStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+model User {
+  id                       String                   @id @default(cuid())
+  email                    String                   @unique
+  username                 String                   @unique
+  displayName              String
+  passwordHash             String
+  role                     Role                     @default(USER)
+  status                   UserStatus               @default(ACTIVE)
+  bio                      String?
+  avatarUrl                String?
+  country                  String?
+  countryCode              String?
+  deletedAt                DateTime?
+  createdAt                DateTime                 @default(now())
+  updatedAt                DateTime                 @updatedAt
+  refreshTokens            RefreshToken[]
+  createdProblems          Problem[]                @relation("ProblemCreator")
+  submissions              Submission[]
+  statuses                 ProblemSolvedStatus[]
+  registrations            ContestRegistration[]
+  contestSubmissions       ContestSubmission[]
+  discussions              Discussion[]
+  comments                 DiscussionComment[]
+  bookmarks                Bookmark[]
+  lists                    ProblemList[]
+  notes                    Note[]
+  editorials               Editorial[]
+  contests                 Contest[]                @relation("ContestCreator")
+  discussionVotes          DiscussionVote[]
+  rankSnapshots            UserRankSnapshot[]
+  problemAssets            ProblemAsset[]
+  testCaseGenerationJobs   TestCaseGenerationJob[]
+  generatedTestCaseBatches GeneratedTestCaseBatch[]
+
+  @@index([role, status])
+  @@index([country])
+}
+
+model RefreshToken {
+  id        String    @id @default(cuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Problem {
+  id                       String                   @id @default(cuid())
+  slug                     String                   @unique
+  title                    String
+  difficulty               Difficulty
+  description              String
+  constraints              String
+  inputFormat              String
+  outputFormat             String
+  starterCode              Json
+  solution                 String?
+  visibility               ProblemVisibility        @default(PUBLIC)
+  checkerMode              CheckerMode              @default(STANDARD)
+  timeLimitMs              Int                      @default(2000)
+  memoryLimitMb            Int                      @default(256)
+  createdById              String?
+  createdBy                User?                    @relation("ProblemCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt                DateTime                 @default(now())
+  updatedAt                DateTime                 @updatedAt
+  testCases                TestCase[]
+  submissions              Submission[]
+  statuses                 ProblemSolvedStatus[]
+  problemTags              ProblemTag[]
+  contestProblems          ContestProblem[]
+  contestSubmissions       ContestSubmission[]
+  discussions              Discussion[]
+  bookmarks                Bookmark[]
+  listItems                ProblemListItem[]
+  notes                    Note[]
+  editorial                Editorial?
+  problemLanguages         ProblemLanguage[]
+  starterCodes             ProblemStarterCode[]
+  assets                   ProblemAsset[]
+  testCaseGenerationJobs   TestCaseGenerationJob[]
+  generatedTestCaseBatches GeneratedTestCaseBatch[]
+
+  @@index([difficulty])
+  @@index([title])
+  @@index([createdAt])
+  @@index([visibility])
+  @@index([visibility, difficulty, createdAt])
+}
+
+model Language {
+  id               String               @id @default(cuid())
+  key              String               @unique
+  displayName      String
+  monacoId         String
+  fileExtension    String
+  category         LanguageCategory
+  isActive         Boolean              @default(true)
+  isCompiled       Boolean              @default(false)
+  sortOrder        Int                  @default(0)
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+  versions         LanguageVersion[]
+  problemLanguages ProblemLanguage[]
+  starterCodes     ProblemStarterCode[]
+  problemAssets    ProblemAsset[]
+
+  @@index([isActive])
+  @@index([category, sortOrder])
+}
+
+model LanguageVersion {
+  id                    String               @id @default(cuid())
+  languageId            String
+  version               String
+  label                 String
+  judge0Id              Int?
+  dockerImage           String?
+  compileCommand        String?
+  runCommand            String?
+  timeLimitMultiplier   Float                @default(1)
+  memoryLimitMultiplier Float                @default(1)
+  sourceFileName        String
+  executableFileName    String?
+  starterTemplate       String?
+  isDefault             Boolean              @default(false)
+  isActive              Boolean              @default(true)
+  createdAt             DateTime             @default(now())
+  updatedAt             DateTime             @updatedAt
+  language              Language             @relation(fields: [languageId], references: [id], onDelete: Cascade)
+  problemLanguages      ProblemLanguage[]
+  starterCodes          ProblemStarterCode[]
+  executionProfiles     ExecutionProfile[]
+  submissions           Submission[]
+  problemAssets         ProblemAsset[]
+
+  @@unique([languageId, version])
+  @@index([languageId])
+  @@index([judge0Id])
+  @@index([languageId, isDefault])
+}
+
+model ProblemLanguage {
+  id                String           @id @default(cuid())
+  problemId         String
+  languageId        String
+  languageVersionId String?
+  isEnabled         Boolean          @default(true)
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+  problem           Problem          @relation(fields: [problemId], references: [id], onDelete: Cascade)
+  language          Language         @relation(fields: [languageId], references: [id], onDelete: Cascade)
+  languageVersion   LanguageVersion? @relation(fields: [languageVersionId], references: [id], onDelete: Cascade)
+
+  @@unique([problemId, languageId])
+  @@index([problemId])
+  @@index([languageId])
+}
+
+model ProblemStarterCode {
+  id                String           @id @default(cuid())
+  problemId         String
+  languageId        String
+  languageVersionId String?
+  code              String
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+  problem           Problem          @relation(fields: [problemId], references: [id], onDelete: Cascade)
+  language          Language         @relation(fields: [languageId], references: [id], onDelete: Cascade)
+  languageVersion   LanguageVersion? @relation(fields: [languageVersionId], references: [id], onDelete: Cascade)
+
+  @@unique([problemId, languageId, languageVersionId])
+  @@index([problemId])
+  @@index([languageId])
+}
+
+model ExecutionProfile {
+  id                String          @id @default(cuid())
+  languageVersionId String
+  executorType      ExecutorType
+  judge0Id          Int?
+  dockerImage       String?
+  compileCommand    String?
+  runCommand        String?
+  environment       Json?
+  limits            Json?
+  isActive          Boolean         @default(true)
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  languageVersion   LanguageVersion @relation(fields: [languageVersionId], references: [id], onDelete: Cascade)
+
+  @@unique([languageVersionId, executorType])
+  @@index([languageVersionId, executorType])
+  @@index([executorType, isActive])
+}
+
+model Tag {
+  id          String       @id @default(cuid())
+  name        String       @unique
+  slug        String       @unique
+  problemTags ProblemTag[]
+}
+
+model ProblemTag {
+  problemId String
+  tagId     String
+  problem   Problem @relation(fields: [problemId], references: [id], onDelete: Cascade)
+  tag       Tag     @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([problemId, tagId])
+  @@index([tagId])
+}
+
+model TestCase {
+  id               String                  @id @default(cuid())
+  problemId        String
+  batchId          String?
+  generatedByJobId String?
+  input            String
+  expectedOutput   String
+  isSample         Boolean                 @default(false)
+  isStrict         Boolean                 @default(true)
+  explanation      String?
+  order            Int                     @default(0)
+  inputHash        String?
+  outputHash       String?
+  generatorSeed    Int?
+  isGenerated      Boolean                 @default(false)
+  createdAt        DateTime                @default(now())
+  updatedAt        DateTime                @updatedAt
+  problem          Problem                 @relation(fields: [problemId], references: [id], onDelete: Cascade)
+  batch            GeneratedTestCaseBatch? @relation(fields: [batchId], references: [id], onDelete: SetNull)
+  generatedByJob   TestCaseGenerationJob?  @relation(fields: [generatedByJobId], references: [id], onDelete: SetNull)
+
+  @@index([problemId])
+  @@index([problemId, isSample, order])
+  @@index([generatedByJobId])
+  @@index([batchId])
+  @@index([problemId, inputHash])
+}
+
+model ProblemAsset {
+  id                String           @id @default(cuid())
+  problemId         String
+  type              ProblemAssetType
+  languageId        String?
+  languageVersionId String?
+  filename          String
+  sourceCode        String
+  isActive          Boolean          @default(true)
+  createdById       String?
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+  problem           Problem          @relation(fields: [problemId], references: [id], onDelete: Cascade)
+  language          Language?        @relation(fields: [languageId], references: [id], onDelete: SetNull)
+  languageVersion   LanguageVersion? @relation(fields: [languageVersionId], references: [id], onDelete: SetNull)
+  createdBy         User?            @relation(fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([problemId, type])
+  @@index([languageId])
+  @@index([languageVersionId])
+}
+
+model TestCaseGenerationJob {
+  id             String                   @id @default(cuid())
+  problemId      String
+  status         GenerationJobStatus      @default(PENDING)
+  requestedById  String?
+  config         Json
+  totalCases     Int                      @default(0)
+  generatedCases Int                      @default(0)
+  errorMessage   String?
+  createdAt      DateTime                 @default(now())
+  updatedAt      DateTime                 @updatedAt
+  completedAt    DateTime?
+  problem        Problem                  @relation(fields: [problemId], references: [id], onDelete: Cascade)
+  requestedBy    User?                    @relation(fields: [requestedById], references: [id], onDelete: SetNull)
+  batches        GeneratedTestCaseBatch[]
+  testCases      TestCase[]
+
+  @@index([problemId, status])
+  @@index([requestedById])
+}
+
+model GeneratedTestCaseBatch {
+  id          String                @id @default(cuid())
+  problemId   String
+  jobId       String
+  name        String
+  description String?
+  createdById String?
+  createdAt   DateTime              @default(now())
+  problem     Problem               @relation(fields: [problemId], references: [id], onDelete: Cascade)
+  job         TestCaseGenerationJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  createdBy   User?                 @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  testCases   TestCase[]
+
+  @@index([problemId])
+  @@index([jobId])
+}
+
+model Submission {
+  id                      String                     @id @default(cuid())
+  userId                  String
+  problemId               String
+  code                    String
+  language                LegacyLanguage
+  languageId              String?
+  languageVersionId       String?
+  languageKeySnapshot     String?
+  languageNameSnapshot    String?
+  languageVersionSnapshot String?
+  status                  SubmissionStatus           @default(PENDING)
+  runtimeMs               Int?
+  memoryKb                Int?
+  errorMessage            String?
+  createdAt               DateTime                   @default(now())
+  updatedAt               DateTime                   @updatedAt
+  completedAt             DateTime?
+  user                    User                       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  problem                 Problem                    @relation(fields: [problemId], references: [id], onDelete: Cascade)
+  languageVersion         LanguageVersion?           @relation(fields: [languageVersionId], references: [id], onDelete: SetNull)
+  testCaseResults         SubmissionTestCaseResult[]
+  contestSubmission       ContestSubmission?
+
+  @@index([userId])
+  @@index([problemId])
+  @@index([status])
+  @@index([language])
+  @@index([languageId])
+  @@index([languageVersionId])
+  @@index([createdAt])
+  @@index([userId, status, createdAt])
+  @@index([problemId, status, runtimeMs])
+}
+
+model SubmissionTestCaseResult {
+  id             String           @id @default(cuid())
+  submissionId   String
+  testCaseId     String?
+  status         SubmissionStatus
+  input          String
+  expectedOutput String
+  actualOutput   String
+  stderr         String?
+  runtimeMs      Int?
+  memoryKb       Int?
+  createdAt      DateTime         @default(now())
+  submission     Submission       @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+
+  @@index([submissionId])
+  @@index([testCaseId])
+}
+
+model ProblemSolvedStatus {
+  id              String    @id @default(cuid())
+  userId          String
+  problemId       String
+  attempted       Boolean   @default(false)
+  solved          Boolean   @default(false)
+  attempts        Int       @default(0)
+  firstSolvedAt   DateTime?
+  lastSubmittedAt DateTime?
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  problem         Problem   @relation(fields: [problemId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, problemId])
+  @@index([problemId, solved])
+}
+
+model Contest {
+  id            String                @id @default(cuid())
+  title         String
+  slug          String                @unique
+  description   String
+  startTime     DateTime
+  endTime       DateTime
+  status        ContestStatus         @default(UPCOMING)
+  visibility    ProblemVisibility     @default(PUBLIC)
+  createdById   String?
+  createdBy     User?                 @relation("ContestCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt     DateTime              @default(now())
+  updatedAt     DateTime              @updatedAt
+  problems      ContestProblem[]
+  registrations ContestRegistration[]
+  submissions   ContestSubmission[]
+  discussions   Discussion[]
+
+  @@index([startTime, endTime])
+  @@index([status, startTime])
+  @@index([visibility, status])
+}
+
+model ContestProblem {
+  id        String  @id @default(cuid())
+  contestId String
+  problemId String
+  order     Int
+  points    Int     @default(100)
+  contest   Contest @relation(fields: [contestId], references: [id], onDelete: Cascade)
+  problem   Problem @relation(fields: [problemId], references: [id], onDelete: Cascade)
+
+  @@unique([contestId, problemId])
+  @@index([problemId])
+  @@index([contestId, order])
+}
+
+model ContestRegistration {
+  id           String   @id @default(cuid())
+  contestId    String
+  userId       String
+  registeredAt DateTime @default(now())
+  contest      Contest  @relation(fields: [contestId], references: [id], onDelete: Cascade)
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([contestId, userId])
+  @@index([userId])
+}
+
+model ContestSubmission {
+  id             String           @id @default(cuid())
+  contestId      String
+  userId         String
+  problemId      String
+  submissionId   String           @unique
+  status         SubmissionStatus
+  penaltyMinutes Int              @default(0)
+  submittedAt    DateTime         @default(now())
+  contest        Contest          @relation(fields: [contestId], references: [id], onDelete: Cascade)
+  user           User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  problem        Problem          @relation(fields: [problemId], references: [id], onDelete: Cascade)
+  submission     Submission       @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+
+  @@index([contestId, userId, problemId])
+  @@index([contestId, status, submittedAt])
+  @@index([userId, submittedAt])
+}
+
+model Discussion {
+  id        String              @id @default(cuid())
+  problemId String?
+  contestId String?
+  authorId  String
+  title     String
+  content   String
+  tags      String[]            @default([])
+  upvotes   Int                 @default(0)
+  downvotes Int                 @default(0)
+  createdAt DateTime            @default(now())
+  updatedAt DateTime            @updatedAt
+  problem   Problem?            @relation(fields: [problemId], references: [id], onDelete: Cascade)
+  contest   Contest?            @relation(fields: [contestId], references: [id], onDelete: Cascade)
+  author    User                @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  comments  DiscussionComment[]
+  votes     DiscussionVote[]
+
+  @@index([problemId, createdAt])
+  @@index([contestId, createdAt])
+  @@index([createdAt])
+  @@index([authorId])
+}
+
+model DiscussionComment {
+  id           String     @id @default(cuid())
+  discussionId String
+  authorId     String
+  content      String
+  upvotes      Int        @default(0)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  discussion   Discussion @relation(fields: [discussionId], references: [id], onDelete: Cascade)
+  author       User       @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  @@index([discussionId, createdAt])
+  @@index([authorId])
+}
+
+model DiscussionVote {
+  id           String     @id @default(cuid())
+  discussionId String
+  userId       String
+  value        Int
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  discussion   Discussion @relation(fields: [discussionId], references: [id], onDelete: Cascade)
+  user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([discussionId, userId])
+  @@index([userId])
+}
+
+model Bookmark {
+  id        String   @id @default(cuid())
+  userId    String
+  problemId String
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  problem   Problem  @relation(fields: [problemId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, problemId])
+  @@index([problemId])
+}
+
+model ProblemList {
+  id          String            @id @default(cuid())
+  userId      String
+  name        String
+  description String?
+  isPublic    Boolean           @default(false)
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  user        User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items       ProblemListItem[]
+
+  @@index([userId])
+}
+
+model ProblemListItem {
+  id            String      @id @default(cuid())
+  problemListId String
+  problemId     String
+  order         Int         @default(0)
+  createdAt     DateTime    @default(now())
+  problemList   ProblemList @relation(fields: [problemListId], references: [id], onDelete: Cascade)
+  problem       Problem     @relation(fields: [problemId], references: [id], onDelete: Cascade)
+
+  @@unique([problemListId, problemId])
+  @@index([problemId])
+}
+
+model Note {
+  id        String   @id @default(cuid())
+  userId    String
+  problemId String
+  content   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  problem   Problem  @relation(fields: [problemId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, problemId])
+  @@index([problemId])
+}
+
+model Editorial {
+  id          String    @id @default(cuid())
+  problemId   String    @unique
+  authorId    String?
+  title       String
+  content     String
+  isPublished Boolean   @default(false)
+  publishedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  problem     Problem   @relation(fields: [problemId], references: [id], onDelete: Cascade)
+  author      User?     @relation(fields: [authorId], references: [id], onDelete: SetNull)
+
+  @@index([problemId])
+  @@index([isPublished])
+}
+
+model UserRankSnapshot {
+  id             String   @id @default(cuid())
+  userId         String
+  rank           Int
+  solvedCount    Int
+  acceptanceRate Int
+  snapshotDate   DateTime
+  createdAt      DateTime @default(now())
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, snapshotDate])
+  @@index([userId])
+  @@index([snapshotDate])
+}

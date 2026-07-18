@@ -1,0 +1,153 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1000" viewBox="0 0 1600 1000" role="img" aria-labelledby="title desc">
+  <title id="title">CodeArena Code Verification Flow</title>
+  <desc id="desc">A technical flow diagram showing how CodeArena verifies code submissions using API validation, Redis queue, worker execution, Judge0 sandboxing, stored test cases, and final verdict persistence.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0f172a"/>
+      <stop offset="55%" stop-color="#111827"/>
+      <stop offset="100%" stop-color="#1f2937"/>
+    </linearGradient>
+    <linearGradient id="card" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.12"/>
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0.06"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="150%">
+      <feDropShadow dx="0" dy="16" stdDeviation="16" flood-color="#000000" flood-opacity="0.35"/>
+    </filter>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#38bdf8"/>
+    </marker>
+    <style>
+      .bg { fill: url(#bg); }
+      .title { font: 800 58px Arial, Helvetica, sans-serif; fill: #f8fafc; letter-spacing: 0; }
+      .subtitle { font: 400 25px Arial, Helvetica, sans-serif; fill: #cbd5e1; letter-spacing: 0; }
+      .section-title { font: 800 26px Arial, Helvetica, sans-serif; fill: #f8fafc; letter-spacing: 0; }
+      .box-title { font: 800 24px Arial, Helvetica, sans-serif; fill: #f8fafc; letter-spacing: 0; }
+      .box-text { font: 400 18px Arial, Helvetica, sans-serif; fill: #cbd5e1; letter-spacing: 0; }
+      .small { font: 700 15px Arial, Helvetica, sans-serif; fill: #94a3b8; letter-spacing: 0.5px; }
+      .pill-text { font: 800 15px Arial, Helvetica, sans-serif; fill: #0f172a; letter-spacing: 0; }
+      .mono { font: 700 18px Consolas, Monaco, monospace; fill: #e2e8f0; letter-spacing: 0; }
+      .card { fill: url(#card); stroke: #334155; stroke-width: 1.4; filter: url(#shadow); }
+      .thin-card { fill: #0b1220; stroke: #334155; stroke-width: 1.2; }
+      .line { stroke: #38bdf8; stroke-width: 4; fill: none; marker-end: url(#arrow); }
+      .muted-line { stroke: #475569; stroke-width: 2; fill: none; }
+    </style>
+  </defs>
+
+  <rect class="bg" width="1600" height="1000"/>
+  <circle cx="1410" cy="130" r="190" fill="#14b8a6" opacity="0.08"/>
+  <circle cx="210" cy="880" r="260" fill="#f59e0b" opacity="0.07"/>
+
+  <text x="90" y="105" class="title">CodeArena: Code Verification Logic</text>
+  <text x="92" y="148" class="subtitle">The API never executes user code. Submissions are queued, sandboxed by Judge0, compared against stored DB test cases, then persisted as a verdict.</text>
+
+  <rect x="90" y="205" width="1420" height="515" rx="28" class="card"/>
+  <text x="125" y="255" class="section-title">Submission pipeline</text>
+
+  <g transform="translate(120 295)">
+    <rect width="245" height="130" rx="18" class="thin-card"/>
+    <rect x="18" y="18" width="58" height="58" rx="14" fill="#38bdf8"/>
+    <text x="34" y="56" class="pill-text">1</text>
+    <text x="96" y="43" class="box-title">Submit Code</text>
+    <text x="96" y="78" class="box-text">User selects problem,</text>
+    <text x="96" y="103" class="box-text">language, and source.</text>
+  </g>
+
+  <path class="line" d="M 380 360 H 458"/>
+
+  <g transform="translate(475 295)">
+    <rect width="245" height="130" rx="18" class="thin-card"/>
+    <rect x="18" y="18" width="58" height="58" rx="14" fill="#f59e0b"/>
+    <text x="34" y="56" class="pill-text">2</text>
+    <text x="96" y="43" class="box-title">API Checks</text>
+    <text x="96" y="78" class="box-text">Auth, RBAC, problem,</text>
+    <text x="96" y="103" class="box-text">language profile.</text>
+  </g>
+
+  <path class="line" d="M 735 360 H 813"/>
+
+  <g transform="translate(830 295)">
+    <rect width="245" height="130" rx="18" class="thin-card"/>
+    <rect x="18" y="18" width="58" height="58" rx="14" fill="#22c55e"/>
+    <text x="34" y="56" class="pill-text">3</text>
+    <text x="96" y="43" class="box-title">Persist</text>
+    <text x="96" y="78" class="mono">PENDING</text>
+    <text x="96" y="103" class="box-text">No verdict yet.</text>
+  </g>
+
+  <path class="line" d="M 1090 360 H 1168"/>
+
+  <g transform="translate(1185 295)">
+    <rect width="245" height="130" rx="18" class="thin-card"/>
+    <rect x="18" y="18" width="58" height="58" rx="14" fill="#a78bfa"/>
+    <text x="34" y="56" class="pill-text">4</text>
+    <text x="96" y="43" class="box-title">Queue Job</text>
+    <text x="96" y="78" class="box-text">BullMQ + Redis</text>
+    <text x="96" y="103" class="box-text">decouple API load.</text>
+  </g>
+
+  <path class="line" d="M 1308 442 V 502 H 250 V 540"/>
+
+  <g transform="translate(120 540)">
+    <rect width="245" height="130" rx="18" class="thin-card"/>
+    <rect x="18" y="18" width="58" height="58" rx="14" fill="#06b6d4"/>
+    <text x="34" y="56" class="pill-text">5</text>
+    <text x="96" y="43" class="box-title">Worker</text>
+    <text x="96" y="78" class="mono">RUNNING</text>
+    <text x="96" y="103" class="box-text">Locks job safely.</text>
+  </g>
+
+  <path class="line" d="M 380 605 H 458"/>
+
+  <g transform="translate(475 540)">
+    <rect width="245" height="130" rx="18" class="thin-card"/>
+    <rect x="18" y="18" width="58" height="58" rx="14" fill="#ef4444"/>
+    <text x="34" y="56" class="pill-text">6</text>
+    <text x="96" y="43" class="box-title">Judge0</text>
+    <text x="96" y="78" class="box-text">Sandbox executes</text>
+    <text x="96" y="103" class="box-text">each test case.</text>
+  </g>
+
+  <path class="line" d="M 735 605 H 813"/>
+
+  <g transform="translate(830 540)">
+    <rect width="245" height="130" rx="18" class="thin-card"/>
+    <rect x="18" y="18" width="58" height="58" rx="14" fill="#f97316"/>
+    <text x="34" y="56" class="pill-text">7</text>
+    <text x="96" y="43" class="box-title">Compare</text>
+    <text x="96" y="78" class="box-text">Normalize stdout</text>
+    <text x="96" y="103" class="box-text">vs expected output.</text>
+  </g>
+
+  <path class="line" d="M 1090 605 H 1168"/>
+
+  <g transform="translate(1185 540)">
+    <rect width="245" height="130" rx="18" class="thin-card"/>
+    <rect x="18" y="18" width="58" height="58" rx="14" fill="#22c55e"/>
+    <text x="34" y="56" class="pill-text">8</text>
+    <text x="96" y="43" class="box-title">Verdict</text>
+    <text x="96" y="78" class="box-text">Save final state,</text>
+    <text x="96" y="103" class="box-text">runtime, memory.</text>
+  </g>
+
+  <rect x="90" y="760" width="690" height="170" rx="24" class="card"/>
+  <text x="125" y="810" class="section-title">Stored test case rule</text>
+  <text x="125" y="850" class="box-text">Problem -> DB test cases -> every user is judged against the same cases.</text>
+  <text x="125" y="885" class="box-text">Run uses sample cases. Submit uses all stored cases, including hidden cases.</text>
+  <text x="125" y="918" class="small">No per-login, per-user, or random submission-time test generation.</text>
+
+  <rect x="820" y="760" width="690" height="170" rx="24" class="card"/>
+  <text x="855" y="810" class="section-title">Terminal verdicts</text>
+  <rect x="855" y="835" width="150" height="36" rx="18" fill="#bbf7d0"/>
+  <text x="882" y="859" class="pill-text">ACCEPTED</text>
+  <rect x="1020" y="835" width="175" height="36" rx="18" fill="#fecdd3"/>
+  <text x="1041" y="859" class="pill-text">WRONG_ANSWER</text>
+  <rect x="1210" y="835" width="95" height="36" rx="18" fill="#fed7aa"/>
+  <text x="1235" y="859" class="pill-text">TLE</text>
+  <rect x="1320" y="835" width="155" height="36" rx="18" fill="#ddd6fe"/>
+  <text x="1340" y="859" class="pill-text">RUNTIME_ERROR</text>
+  <text x="855" y="905" class="box-text">Compilation errors, memory limits, and internal worker failures also become terminal states.</text>
+
+  <path class="muted-line" d="M 125 955 H 1475"/>
+  <text x="125" y="982" class="small">Security boundary: hidden input/output and source secrets are never exposed through public APIs or live status events.</text>
+</svg>

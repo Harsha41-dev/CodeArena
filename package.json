@@ -1,0 +1,52 @@
+{
+  "name": "codearena",
+  "version": "1.0.0",
+  "private": true,
+  "description": "CodeArena - small LeetCode-like platform I built for practice",
+  "workspaces": [
+    "apps/api",
+    "apps/web"
+  ],
+  "scripts": {
+    "dev": "concurrently \"npm run dev -w apps/api\" \"npm run dev -w apps/web\"",
+    "dev:api": "npm run dev -w apps/api",
+    "dev:web": "npm run dev -w apps/web",
+    "lint": "eslint apps/api/src apps/web/src --max-warnings 50",
+    "lint:fix": "eslint apps/api/src apps/web/src --fix",
+    "format": "prettier --write \"apps/**/*.{ts,tsx,js,json,css,md}\" \"docs/**/*.md\"",
+    "format:check": "prettier --check \"apps/**/*.{ts,tsx,js,json,css,md}\" \"docs/**/*.md\"",
+    "typecheck": "npm run typecheck -w apps/api && npm run typecheck -w apps/web",
+    "test": "npm run test -w apps/api && npm run test -w apps/web",
+    "build": "npm run build -w apps/api && npm run build -w apps/web",
+    "postinstall": "npm run prisma:generate -w apps/api",
+    "judge0:health": "npm run judge0:health -w apps/api",
+    "judge0:local:connect": "powershell -ExecutionPolicy Bypass -File scripts/connect-local-judge0.ps1",
+    "judge0:local:connect:dev": "powershell -ExecutionPolicy Bypass -File scripts/connect-local-judge0.ps1 -StartDev",
+    "db:generate": "npm run prisma:generate -w apps/api",
+    "db:migrate": "npm run prisma:migrate -w apps/api",
+    "db:seed": "npm run seed -w apps/api",
+    "prisma:generate": "npm run prisma:generate -w apps/api",
+    "prisma:migrate": "npm run prisma:migrate -w apps/api",
+    "seed": "npm run seed -w apps/api",
+    "leaderboard:snapshot": "npm run leaderboard:snapshot -w apps/api",
+    "languages:sync:judge0": "npm run languages:sync:judge0 -w apps/api"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.5",
+    "concurrently": "^9.1.2",
+    "eslint": "^9.39.5",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-prettier": "^5.5.6",
+    "eslint-plugin-react": "^7.37.5",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^17.7.0",
+    "prettier": "^3.9.5",
+    "typescript-eslint": "^8.64.0"
+  },
+  "overrides": {
+    "dompurify": "3.4.11"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

@@ -1,0 +1,147 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+  --ca-bg: #f4f4f5; /* zinc-100 */
+  --ca-bg-image: url("/assets/bg-light.png");
+  --ca-panel: #ffffff; /* white */
+  --ca-panel-muted: #fafafa; /* zinc-50 */
+  --ca-border: #e4e4e7; /* zinc-200 */
+  --ca-text: #09090b; /* zinc-950 */
+  --ca-muted: #71717a; /* zinc-500 */
+
+  /* Primary Accent: Emerald */
+  --ca-accent: #10b981; /* emerald-500 */
+  --ca-accent-strong: #059669; /* emerald-600 */
+
+  /* Semantic Colors */
+  --ca-info: #3b82f6; /* blue-500 */
+  --ca-success: #10b981; /* emerald-500 */
+  --ca-warn: #f59e0b; /* amber-500 */
+  --ca-danger: #ef4444; /* red-500 */
+
+  --ca-ring: rgba(16, 185, 129, 0.2);
+}
+
+.dark {
+  color-scheme: dark;
+  --ca-bg: #09090b; /* zinc-950 */
+  --ca-bg-image: url("/assets/bg-dark.png");
+  --ca-panel: #18181b; /* zinc-900 */
+  --ca-panel-muted: #111113; /* custom deep zinc */
+  --ca-border: #27272a; /* zinc-800 */
+  --ca-text: #fafafa; /* zinc-50 */
+  --ca-muted: #a1a1aa; /* zinc-400 */
+
+  /* Primary Accent: Emerald */
+  --ca-accent: #10b981; /* emerald-500 */
+  --ca-accent-strong: #34d399; /* emerald-400 */
+
+  /* Semantic Colors */
+  --ca-info: #60a5fa; /* blue-400 */
+  --ca-success: #34d399; /* emerald-400 */
+  --ca-warn: #fbbf24; /* amber-400 */
+  --ca-danger: #f87171; /* red-400 */
+
+  --ca-ring: rgba(16, 185, 129, 0.2);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background-color: var(--ca-bg);
+  background-image: var(--ca-bg-image);
+  background-size: cover;
+  background-position: center;
+  background-attachment: fixed;
+  color: var(--ca-text);
+  font-family:
+    Inter,
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+pre {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--ca-border);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--ca-muted);
+}
+
+@layer components {
+  .ca-panel {
+    @apply rounded-xl border border-slate-200/80 bg-white shadow-sm dark:border-white/10 dark:bg-[#111113] dark:shadow-none;
+  }
+
+  .ca-muted-panel {
+    @apply rounded-xl border border-slate-200/80 bg-slate-50/50 dark:border-white/10 dark:bg-white/5;
+  }
+
+  .ca-input {
+    @apply h-9 w-full rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-900 outline-none transition-colors placeholder:text-slate-400 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-50 dark:border-white/10 dark:bg-black/20 dark:text-slate-100 dark:placeholder:text-slate-500 dark:focus:border-emerald-500;
+  }
+
+  select.ca-input option,
+  select.ca-input optgroup {
+    background-color: #ffffff;
+    color: #0f172a;
+  }
+
+  select.ca-input option:disabled {
+    color: #94a3b8;
+  }
+
+  .dark select.ca-input option,
+  .dark select.ca-input optgroup {
+    background-color: #0f172a;
+    color: #e2e8f0;
+  }
+
+  .dark select.ca-input option:disabled {
+    color: #64748b;
+  }
+
+  .ca-textarea {
+    @apply w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition-colors placeholder:text-slate-400 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-50 dark:border-white/10 dark:bg-black/20 dark:text-slate-100 dark:placeholder:text-slate-500 dark:focus:border-emerald-500;
+  }
+
+  .ca-table-head {
+    @apply bg-slate-50/50 text-xs font-semibold uppercase tracking-wider text-slate-500 dark:bg-white/5 dark:text-slate-400;
+  }
+
+  .ca-table-row {
+    @apply border-b border-slate-100 transition-colors hover:bg-slate-50/50 dark:border-white/5 dark:hover:bg-white/5;
+  }
+}
