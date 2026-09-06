@@ -1,7 +1,9 @@
 import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import {
   Bell,
   BookOpen,
+  Building2,
   Code2,
   Compass,
   Home,
@@ -11,6 +13,7 @@ import {
   Moon,
   Search,
   Shield,
+  Target,
   Trophy,
   UserRound,
   UsersRound
@@ -18,13 +21,17 @@ import {
 import type { LucideIcon } from "lucide-react";
 import { clsx } from "clsx";
 import { Button } from "./Button";
+import { notificationsApi } from "../services/api";
 import { useAuthStore } from "../stores/authStore";
 import { useUiStore } from "../stores/uiStore";
 
 const navLinks = [
   { href: "/problems", label: "Problems", icon: BookOpen },
+  { href: "/companies", label: "Companies", icon: Building2 },
   { href: "/contests", label: "Contests", icon: Trophy },
+  { href: "/virtual-contest", label: "Virtual", icon: Trophy },
   { href: "/practice", label: "Practice", icon: Compass },
+  { href: "/interview", label: "Interview", icon: Target },
   { href: "/leaderboard", label: "Leaderboard", icon: UsersRound },
   { href: "/discuss", label: "Discuss", icon: ListChecks },
   { href: "/submissions", label: "Submissions", icon: Code2 },
@@ -37,9 +44,16 @@ export function AppShell() {
   const { user, logout } = useAuthStore();
   const { toggleDarkMode } = useUiStore();
   const navigate = useNavigate();
+  const unreadNotifications = useQuery({
+    queryKey: ["notifications", "unread"],
+    queryFn: () => notificationsApi.list({ unreadOnly: "true", limit: "10" }),
+    enabled: Boolean(user),
+    staleTime: 30_000
+  });
 
   const isAdmin = user?.role === "ADMIN";
   const initials = user ? user.displayName.slice(0, 2).toUpperCase() : "";
+  const unreadCount = unreadNotifications.data?.length ?? 0;
 
   function handleSearchKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
     if (event.key !== "Enter") {
@@ -86,8 +100,18 @@ export function AppShell() {
           </div>
 
           <div className="flex items-center gap-2">
-            <Button variant="ghost" aria-label="Notifications" className="rounded-full h-9 w-9 p-0">
+            <Button
+              variant="ghost"
+              aria-label="Notifications"
+              className="relative h-9 w-9 rounded-full p-0"
+              onClick={() => navigate("/profile?tab=notifications")}
+            >
               <Bell className="h-4 w-4" />
+              {unreadCount > 0 ? (
+                <span className="absolute -right-0.5 -top-0.5 grid min-h-4 min-w-4 place-items-center rounded-full bg-rose-500 px-1 text-[10px] font-bold leading-none text-white">
+                  {unreadCount > 9 ? "9+" : unreadCount}
+                </span>
+              ) : null}
             </Button>
             <Button
               variant="ghost"
@@ -162,7 +186,7 @@ export function AppShell() {
         </main>
       </div>
 
-      {/* mobile bottom nav — only first 5 links so it fits */}
+      {/* mobile bottom nav - only first 5 links so it fits */}
       <nav className="fixed bottom-0 left-0 right-0 z-40 grid grid-cols-5 border-t border-slate-200 bg-white/95 backdrop-blur-md pb-safe lg:hidden dark:border-white/10 dark:bg-[#09090b]/95">
         {navLinks.slice(0, 5).map((link) => (
           <NavLink

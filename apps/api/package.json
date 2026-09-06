@@ -17,6 +17,7 @@
     "languages:sync:judge0": "tsx src/scripts/syncJudge0Languages.ts",
     "prisma:generate": "prisma generate --schema prisma/schema.prisma",
     "prisma:migrate": "prisma migrate dev --schema prisma/schema.prisma",
+    "prisma:migrate:deploy": "prisma migrate deploy --schema prisma/schema.prisma",
     "seed": "tsx prisma/seed.ts"
   },
   "dependencies": {

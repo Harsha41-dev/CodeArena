@@ -1,8 +1,7 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useSearchParams } from "react-router-dom";
 import { problemsApi } from "../services/api";
-import type { Difficulty, Problem } from "../types/api";
 import { EmptyState, ErrorState } from "../components/State";
 import { FilterBar, SelectFilter } from "../components/FilterBar";
 import { LoadingSkeleton } from "../components/LoadingSkeleton";
@@ -19,20 +18,25 @@ export function ProblemsPage() {
   const [search, setSearch] = useState(searchParams.get("search") ?? "");
   const [difficulty, setDifficulty] = useState(searchParams.get("difficulty") ?? "");
   const [tag, setTag] = useState(searchParams.get("tag") ?? "");
+  const [topic, setTopic] = useState(searchParams.get("topic") ?? "");
+  const [company, setCompany] = useState(searchParams.get("company") ?? "");
   const [status, setStatus] = useState(searchParams.get("status") ?? "");
-  const [sort, setSort] = useState("latest");
+  const [sort, setSort] = useState(searchParams.get("sort") ?? "newest");
 
   // build query params for the API (skip empty filters)
   const queryParams: Record<string, string> = {};
   if (search) queryParams.search = search;
   if (difficulty) queryParams.difficulty = difficulty;
   if (tag) queryParams.tag = tag;
+  if (topic) queryParams.topic = topic;
+  if (company) queryParams.company = company;
   if (status) queryParams.status = status;
+  if (sort) queryParams.sort = sort;
   // fetch a bigger chunk and paginate client-side for now
   queryParams.limit = "100";
 
   const problems = useQuery({
-    queryKey: ["problems", search, difficulty, tag, status],
+    queryKey: ["problems", search, difficulty, tag, topic, company, status, sort],
     queryFn: () => problemsApi.list(queryParams)
   });
 
@@ -41,26 +45,41 @@ export function ProblemsPage() {
     queryFn: problemsApi.tags
   });
 
-  const sorted = useMemo(() => {
-    const list = problems.data ? [...problems.data] : [];
-    return sortProblems(list, sort);
-  }, [problems.data, sort]);
+  const companies = useQuery({
+    queryKey: ["companies"],
+    queryFn: problemsApi.companies
+  });
 
-  const totalPages = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE));
+  const problemItems = problems.data ?? [];
+  const totalPages = Math.max(1, Math.ceil(problemItems.length / PAGE_SIZE));
   const start = (page - 1) * PAGE_SIZE;
-  const pageItems = sorted.slice(start, start + PAGE_SIZE);
+  const pageItems = problemItems.slice(start, start + PAGE_SIZE);
 
-  function updateFilters(next: { search?: string; difficulty?: string; tag?: string; status?: string }) {
+  function updateFilters(next: {
+    search?: string;
+    difficulty?: string;
+    tag?: string;
+    topic?: string;
+    company?: string;
+    status?: string;
+    sort?: string;
+  }) {
     const params: Record<string, string> = {};
     const s = next.search !== undefined ? next.search : search;
     const d = next.difficulty !== undefined ? next.difficulty : difficulty;
     const t = next.tag !== undefined ? next.tag : tag;
+    const tp = next.topic !== undefined ? next.topic : topic;
+    const c = next.company !== undefined ? next.company : company;
     const st = next.status !== undefined ? next.status : status;
+    const so = next.sort !== undefined ? next.sort : sort;
 
     if (s) params.search = s;
     if (d) params.difficulty = d;
     if (t) params.tag = t;
+    if (tp) params.topic = tp;
+    if (c) params.company = c;
     if (st) params.status = st;
+    if (so && so !== "newest") params.sort = so;
 
     setSearchParams(params);
     setPage(1);
@@ -110,6 +129,26 @@ export function ProblemsPage() {
                 ...(tags.data ?? []).map((item) => ({ value: item.slug, label: item.name }))
               ]}
             />
+            <SearchInput
+              value={topic}
+              placeholder="Topic"
+              onChange={(value) => {
+                setTopic(value);
+                updateFilters({ topic: value });
+              }}
+            />
+            <SelectFilter
+              label="Company"
+              value={company}
+              onChange={(value) => {
+                setCompany(value);
+                updateFilters({ company: value });
+              }}
+              options={[
+                { value: "", label: "All companies" },
+                ...(companies.data ?? []).map((item) => ({ value: item.slug, label: item.name }))
+              ]}
+            />
             <SelectFilter
               label="Status"
               value={status}
@@ -127,9 +166,17 @@ export function ProblemsPage() {
             <SelectFilter
               label="Sort"
               value={sort}
-              onChange={setSort}
+              onChange={(value) => {
+                setSort(value);
+                updateFilters({ sort: value });
+              }}
               options={[
-                { value: "latest", label: "Latest" },
+                { value: "newest", label: "Newest" },
+                { value: "oldest", label: "Oldest" },
+                { value: "acceptance", label: "Acceptance" },
+                { value: "submissions", label: "Submissions" },
+                { value: "solved", label: "Solved count" },
+                { value: "frequency", label: "Frequency" },
                 { value: "difficulty", label: "Difficulty" },
                 { value: "title", label: "Title" }
               ]}
@@ -161,31 +208,4 @@ export function ProblemsPage() {
       ) : null}
     </section>
   );
-}
-
-function sortProblems(items: Problem[], sort: string): Problem[] {
-  const difficultyOrder: Record<Difficulty, number> = {
-    EASY: 1,
-    MEDIUM: 2,
-    HARD: 3
-  };
-
-  const copy = items.slice();
-
-  if (sort === "difficulty") {
-    copy.sort((a, b) => {
-      const diff = difficultyOrder[a.difficulty] - difficultyOrder[b.difficulty];
-      if (diff !== 0) return diff;
-      return a.title.localeCompare(b.title);
-    });
-    return copy;
-  }
-
-  if (sort === "title") {
-    copy.sort((a, b) => a.title.localeCompare(b.title));
-    return copy;
-  }
-
-  // latest = keep API order
-  return copy;
 }

@@ -13,7 +13,12 @@ import { Card, CardContent, CardHeader, CardTitle } from "../components/Card";
 export function LandingPage() {
   const problems = useQuery({
     queryKey: ["landing-problems"],
-    queryFn: () => problemsApi.list({ limit: "8" })
+    queryFn: () => problemsApi.list({ limit: "8", sort: "frequency" })
+  });
+
+  const dailyChallenge = useQuery({
+    queryKey: ["landing-daily-challenge"],
+    queryFn: problemsApi.dailyChallenge
   });
 
   const contests = useQuery({
@@ -26,16 +31,16 @@ export function LandingPage() {
     queryFn: leaderboardApi.global
   });
 
-  // submissions need auth — if guest, this just fails and we show "Login"
+  // submissions need auth - if guest, this just fails and we show "Login"
   const submissions = useQuery({
     queryKey: ["landing-submissions"],
-    queryFn: submissionsApi.list,
+    queryFn: () => submissionsApi.list(),
     retry: false
   });
 
   const problemList = problems.data ?? [];
-  const daily = problemList.length > 0 ? problemList[0] : undefined;
-  const popular = problemList.slice(1, 5);
+  const daily = dailyChallenge.data?.problem ?? (problemList.length > 0 ? problemList[0] : undefined);
+  const popular = problemList.filter((problem) => problem.id !== daily?.id).slice(0, 4);
   const upcoming = (contests.data ?? []).slice(0, 2);
 
   let submissionCount: number | string = "Login";

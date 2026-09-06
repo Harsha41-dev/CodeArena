@@ -17,7 +17,11 @@ export const createContestSchema = z.object({
     startTime: z.coerce.date(),
     endTime: z.coerce.date(),
     problemIds: z.array(z.string()).min(1),
-    visibility: z.enum(["PUBLIC", "PRIVATE", "ARCHIVED"]).optional()
+    visibility: z.enum(["PUBLIC", "PRIVATE", "ARCHIVED"]).optional(),
+    freezeStartsAt: z.coerce.date().optional().nullable(),
+    isRated: z.boolean().optional(),
+    ratingSeason: z.string().trim().max(80).optional().nullable(),
+    ratingScheduledAt: z.coerce.date().optional().nullable()
   })
 });
 
@@ -37,7 +41,11 @@ export const updateContestSchema = z.object({
       startTime: z.coerce.date().optional(),
       endTime: z.coerce.date().optional(),
       status: z.enum(["UPCOMING", "LIVE", "ENDED"]).optional(),
-      visibility: z.enum(["PUBLIC", "PRIVATE", "ARCHIVED"]).optional()
+      visibility: z.enum(["PUBLIC", "PRIVATE", "ARCHIVED"]).optional(),
+      freezeStartsAt: z.coerce.date().optional().nullable(),
+      isRated: z.boolean().optional(),
+      ratingSeason: z.string().trim().max(80).optional().nullable(),
+      ratingScheduledAt: z.coerce.date().optional().nullable()
     })
     .refine((value) => Object.keys(value).length > 0, "At least one contest field is required")
 });
@@ -52,4 +60,12 @@ export const addContestProblemSchema = z.object({
 
 export const removeContestProblemSchema = z.object({
   params: z.object({ id: z.string().min(1), problemId: z.string().min(1) })
+});
+
+export const createContestAnnouncementSchema = z.object({
+  params: z.object({ id: z.string().min(1) }),
+  body: z.object({
+    title: z.string().trim().min(3).max(160),
+    content: z.string().trim().min(3).max(20_000)
+  })
 });

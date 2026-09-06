@@ -1,30 +1,63 @@
 import axios, { type AxiosError, type InternalAxiosRequestConfig } from "axios";
 import type {
+  AbuseAnalytics,
   ApiResponse,
+  AdminAuditLog,
   AuthResult,
+  BadgeDefinition,
+  BackupRun,
   Bookmark,
   CheckerMode,
   CheckerPreviewResult,
   CodeLanguage,
   CodeLanguageVersion,
+  Company,
   Contest,
+  ContestAnnouncement,
+  ContestRatingJob,
   CustomRunResult,
+  DailyChallenge,
   Discussion,
   Editorial,
   ExecutorCapabilityResponse,
   ExecutorHealthResponse,
+  FollowStatus,
   GeneratedTestCaseBatch,
   GenerationPreview,
+  HealthCheckSnapshot,
+  LearningCollection,
   LeaderboardRow,
+  ModerationStatus,
+  MonitoringAlert,
+  Notification,
+  PracticeOutcome,
+  PracticeSession,
+  PracticeSessionType,
   Problem,
   ProblemAsset,
   ProblemAssetType,
   ProblemLanguageOption,
+  ProblemRecommendation,
+  ProblemLeaderboardRow,
+  ProblemSetDetail,
+  ProblemSetSummary,
+  ProductionStatus,
+  PublicUserProfile,
+  RatingEvent,
+  Report,
+  ReportTargetType,
+  RevisionQueue,
   RunResult,
+  Solution,
+  SolutionVisibility,
+  StudyPlanDetail,
+  StudyPlanSummary,
   Submission,
   TestCase,
   TestCaseGenerationJob,
+  UserRating,
   User,
+  UserBadge,
   UserStats
 } from "../types/api";
 import { useAuthStore } from "../stores/authStore";
@@ -43,6 +76,13 @@ export interface CreateProblemPayload {
   checkerMode?: CheckerMode;
   timeLimitMs?: number;
   memoryLimitMb?: number;
+  companies?: Array<{
+    companyId?: string;
+    name?: string;
+    slug?: string;
+    frequency?: number;
+    isFeatured?: boolean;
+  }>;
 }
 
 export type CreateTestCasePayload = Omit<TestCase, "id"> & { order?: number; isStrict?: boolean };
@@ -72,6 +112,57 @@ export interface TestGenerationJobPayload {
   skipDuplicates?: boolean;
   timeLimitMs?: number;
   memoryLimitMb?: number;
+}
+
+export interface CreateSolutionPayload {
+  submissionId?: string | null;
+  title: string;
+  content: string;
+  code?: string;
+  language?: string;
+  timeComplexity?: string | null;
+  spaceComplexity?: string | null;
+  visibility?: SolutionVisibility;
+}
+
+export type UpdateSolutionPayload = Partial<
+  Pick<
+    Solution,
+    "title" | "content" | "code" | "language" | "timeComplexity" | "spaceComplexity" | "visibility" | "isPinned"
+  >
+>;
+
+export interface LearningCollectionPayload {
+  slug: string;
+  title: string;
+  description: string;
+  badge?: string | null;
+  dailyUnlockCount?: number;
+  visibility?: "PUBLIC" | "PRIVATE" | "ARCHIVED";
+}
+
+export interface EditorialPayload {
+  title: string;
+  content: string;
+  isPublished?: boolean;
+  structure?: {
+    sections?: Array<{
+      type?: "TEXT" | "HINT" | "SOLUTION" | "COMPLEXITY" | "DIAGRAM";
+      title: string;
+      content: string;
+      language?: string | null;
+      order?: number;
+      isLocked?: boolean;
+    }>;
+    officialSolutions?: Array<{
+      language: string;
+      code: string;
+      explanation?: string | null;
+      timeComplexity?: string | null;
+      spaceComplexity?: string | null;
+      order?: number;
+    }>;
+  };
 }
 
 export const API_BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:4000/api/v1";
@@ -193,8 +284,16 @@ export const authApi = {
 export const problemsApi = {
   list: (params?: Record<string, string>) => unwrap<Problem[]>(api.get("/problems", { params })),
   get: (slug: string) => unwrap<Problem>(api.get(`/problems/${slug}`)),
+  dailyChallenge: () => unwrap<DailyChallenge>(api.get("/daily-challenge")),
+  problemSets: () => unwrap<ProblemSetSummary[]>(api.get("/problem-sets")),
+  problemSet: (slug: string) => unwrap<ProblemSetDetail>(api.get(`/problem-sets/${slug}`)),
+  nextRecommendation: () => unwrap<ProblemRecommendation>(api.get("/recommendations/next")),
+  studyPlans: () => unwrap<StudyPlanSummary[]>(api.get("/study-plans")),
+  studyPlan: (slug: string) => unwrap<StudyPlanDetail>(api.get(`/study-plans/${slug}`)),
+  revisionQueue: () => unwrap<RevisionQueue>(api.get("/revision-queue")),
   languages: (slug: string) => unwrap<ProblemLanguageOption[]>(api.get(`/problems/${slug}/languages`)),
   tags: () => unwrap<Array<{ id: string; name: string; slug: string }>>(api.get("/tags")),
+  companies: () => unwrap<Company[]>(api.get("/companies")),
   create: (payload: CreateProblemPayload) => unwrap<Problem>(api.post("/problems", payload)),
   addTestCase: (problemId: string, payload: CreateTestCasePayload) =>
     unwrap<TestCase>(api.post(`/problems/${problemId}/testcases`, payload)),
@@ -202,7 +301,8 @@ export const problemsApi = {
     unwrap<Editorial | null>(
       api.get(`/problems/${slug}/editorial`, { params: includeDraft ? { includeDraft: "true" } : undefined })
     ),
-  discussions: (slug: string) => unwrap<Discussion[]>(api.get(`/problems/${slug}/discussions`))
+  discussions: (slug: string, sort?: "newest" | "top" | "unanswered") =>
+    unwrap<Discussion[]>(api.get(`/problems/${slug}/discussions`, { params: sort ? { sort } : undefined }))
 };
 
 export interface SubmissionLanguagePayload {
@@ -215,6 +315,7 @@ export interface SubmissionLanguagePayload {
   language?: string;
   code: string;
   input?: string;
+  testCaseId?: string;
   contestId?: string;
 }
 
@@ -223,11 +324,11 @@ export const submissionsApi = {
   runCustom: (payload: SubmissionLanguagePayload & { problemId: string; input: string }) =>
     unwrap<CustomRunResult>(api.post("/run/custom", payload)),
   submit: (payload: SubmissionLanguagePayload) =>
-    unwrap<{ submissionId: string; status: string }>(
+    unwrap<{ submissionId: string; status: string; queuePosition?: number }>(
       api.post(payload.contestId ? `/contests/${payload.contestId}/submit` : "/submit", payload)
     ),
   get: (id: string) => unwrap<Submission>(api.get(`/submissions/${id}`)),
-  list: () => unwrap<Submission[]>(api.get("/submissions"))
+  list: (params?: Record<string, string>) => unwrap<Submission[]>(api.get("/submissions", { params }))
 };
 
 export const languagesApi = {
@@ -243,18 +344,43 @@ export const executorApi = {
 
 export const leaderboardApi = {
   global: () => unwrap<LeaderboardRow[]>(api.get("/leaderboard")),
-  problem: (slug: string) => unwrap<LeaderboardRow[]>(api.get(`/problems/${slug}/leaderboard`))
+  problem: (slug: string) => unwrap<ProblemLeaderboardRow[]>(api.get(`/problems/${slug}/leaderboard`))
+};
+
+export const solutionsApi = {
+  listProblem: (slug: string, params?: Record<string, string>) =>
+    unwrap<Solution[]>(api.get(`/problems/${slug}/solutions`, { params })),
+  get: (id: string) => unwrap<Solution>(api.get(`/solutions/${id}`)),
+  create: (slug: string, payload: CreateSolutionPayload) =>
+    unwrap<Solution>(api.post(`/problems/${slug}/solutions`, payload)),
+  update: (id: string, payload: UpdateSolutionPayload) => unwrap<Solution>(api.patch(`/solutions/${id}`, payload)),
+  delete: (id: string) => unwrap(api.delete(`/solutions/${id}`)),
+  vote: (id: string, value: 1 | -1) => unwrap(api.post(`/solutions/${id}/vote`, { value }))
 };
 
 export const contestsApi = {
   list: () => unwrap<Contest[]>(api.get("/contests")),
   get: (id: string) => unwrap<Contest>(api.get(`/contests/${id}`)),
   register: (id: string) => unwrap(api.post(`/contests/${id}/register`)),
-  leaderboard: (id: string) => unwrap<LeaderboardRow[]>(api.get(`/contests/${id}/leaderboard`))
+  leaderboard: (id: string) => unwrap<LeaderboardRow[]>(api.get(`/contests/${id}/leaderboard`)),
+  announcements: (id: string) => unwrap<ContestAnnouncement[]>(api.get(`/contests/${id}/announcements`)),
+  discussions: (id: string, sort?: "newest" | "top" | "unanswered") =>
+    unwrap<Discussion[]>(api.get(`/contests/${id}/discussions`, { params: sort ? { sort } : undefined })),
+  createDiscussion: (id: string, payload: { title: string; content: string }) =>
+    unwrap<Discussion>(api.post(`/contests/${id}/discussions`, payload))
 };
 
 export const usersApi = {
+  get: (username: string) => unwrap<PublicUserProfile>(api.get(`/users/${username}`)),
   stats: (username: string) => unwrap<UserStats>(api.get(`/users/${username}/stats`)),
+  badges: (username: string) => unwrap<UserBadge[]>(api.get(`/users/${username}/badges`)),
+  followStatus: (username: string) => unwrap<FollowStatus>(api.get(`/users/${username}/follow-status`)),
+  follow: (username: string) => unwrap<{ following: boolean }>(api.post(`/users/${username}/follow`)),
+  unfollow: (username: string) => unwrap<{ following: boolean }>(api.delete(`/users/${username}/follow`)),
+  followers: (username: string, params?: Record<string, string>) =>
+    unwrap<PublicUserProfile[]>(api.get(`/users/${username}/followers`, { params })),
+  following: (username: string, params?: Record<string, string>) =>
+    unwrap<PublicUserProfile[]>(api.get(`/users/${username}/following`, { params })),
   updateMe: (payload: {
     displayName?: string;
     bio?: string | null;
@@ -262,6 +388,23 @@ export const usersApi = {
     country?: string | null;
     countryCode?: string | null;
   }) => unwrap<User>(api.patch("/users/me", payload))
+};
+
+export const reportsApi = {
+  create: (payload: { targetType: ReportTargetType; targetId: string; reason: string; details?: string | null }) =>
+    unwrap<Report>(api.post("/reports", payload))
+};
+
+export const notificationsApi = {
+  list: (params?: Record<string, string>) => unwrap<Notification[]>(api.get("/notifications", { params })),
+  markRead: (id: string) => unwrap<Notification>(api.patch(`/notifications/${id}/read`)),
+  markAllRead: () => unwrap<{ updated: number }>(api.patch("/notifications/read-all"))
+};
+
+export const ratingsApi = {
+  leaderboard: (params?: Record<string, string>) => unwrap<UserRating[]>(api.get("/ratings", { params })),
+  history: (username: string, params?: Record<string, string>) =>
+    unwrap<RatingEvent[]>(api.get(`/users/${username}/ratings`, { params }))
 };
 
 export const socialApi = {
@@ -278,6 +421,10 @@ export const socialApi = {
   updateComment: (id: string, content: string) => unwrap(api.patch(`/discussion-comments/${id}`, { content })),
   deleteComment: (id: string) => unwrap(api.delete(`/discussion-comments/${id}`)),
   voteDiscussion: (id: string, value: 1 | -1) => unwrap(api.post(`/discussions/${id}/vote`, { value })),
+  markCommentHelpful: (id: string) => unwrap(api.post(`/discussion-comments/${id}/helpful`)),
+  unmarkCommentHelpful: (id: string) => unwrap(api.delete(`/discussion-comments/${id}/helpful`)),
+  acceptAnswer: (id: string, commentId: string) =>
+    unwrap(api.patch(`/discussions/${id}/accepted-answer`, { commentId })),
   addBookmark: (slug: string) => unwrap(api.post(`/problems/${slug}/bookmark`)),
   removeBookmark: (slug: string) => unwrap(api.delete(`/problems/${slug}/bookmark`)),
   bookmarks: () => unwrap<Bookmark[]>(api.get("/bookmarks")),
@@ -286,7 +433,32 @@ export const socialApi = {
     unwrap<{ id: string; content: string }>(api.post(`/problems/${slug}/notes`, { content }))
 };
 
+export const practiceApi = {
+  start: (payload: {
+    type: PracticeSessionType;
+    title?: string;
+    durationSeconds?: number;
+    problemIds?: string[];
+    difficulty?: Problem["difficulty"];
+    topic?: string;
+    company?: string;
+    count?: number;
+    settings?: Record<string, unknown> | null;
+  }) => unwrap<PracticeSession>(api.post("/practice/sessions", payload)),
+  list: (params?: Record<string, string>) => unwrap<PracticeSession[]>(api.get("/practice/sessions", { params })),
+  get: (id: string) => unwrap<PracticeSession>(api.get(`/practice/sessions/${id}`)),
+  updateProblem: (
+    sessionId: string,
+    itemId: string,
+    payload: { outcome?: PracticeOutcome | null; secondsSpent?: number | null; submissionId?: string | null }
+  ) => unwrap(api.patch(`/practice/sessions/${sessionId}/problems/${itemId}`, payload)),
+  finish: (id: string, summary?: Record<string, unknown> | null) =>
+    unwrap<PracticeSession>(api.post(`/practice/sessions/${id}/finish`, summary ? { summary } : {})),
+  cancel: (id: string) => unwrap<PracticeSession>(api.post(`/practice/sessions/${id}/cancel`))
+};
+
 export const adminApi = {
+  problems: (params?: Record<string, string>) => unwrap<Problem[]>(api.get("/admin/problems", { params })),
   users: (params?: Record<string, string>) => unwrap<User[]>(api.get("/admin/users", { params })),
   updateUser: (
     id: string,
@@ -305,11 +477,28 @@ export const adminApi = {
     endTime: string;
     problemIds: string[];
     visibility?: Contest["visibility"];
+    freezeStartsAt?: string | null;
+    isRated?: boolean;
+    ratingSeason?: string | null;
+    ratingScheduledAt?: string | null;
   }) => unwrap<Contest>(api.post("/admin/contests", payload)),
   updateContest: (
     id: string,
     payload: Partial<
-      Pick<Contest, "title" | "slug" | "description" | "startTime" | "endTime" | "status" | "visibility">
+      Pick<
+        Contest,
+        | "title"
+        | "slug"
+        | "description"
+        | "startTime"
+        | "endTime"
+        | "status"
+        | "visibility"
+        | "freezeStartsAt"
+        | "isRated"
+        | "ratingSeason"
+        | "ratingScheduledAt"
+      >
     >
   ) => unwrap<Contest>(api.patch(`/admin/contests/${id}`, payload)),
   deleteContest: (id: string) => unwrap(api.delete(`/admin/contests/${id}`)),
@@ -317,7 +506,9 @@ export const adminApi = {
     unwrap(api.post(`/admin/contests/${id}/problems`, payload)),
   removeContestProblem: (id: string, problemId: string) =>
     unwrap(api.delete(`/admin/contests/${id}/problems/${problemId}`)),
-  upsertEditorial: (problemId: string, payload: { title: string; content: string; isPublished?: boolean }) =>
+  createContestAnnouncement: (id: string, payload: { title: string; content: string }) =>
+    unwrap(api.post(`/admin/contests/${id}/announcements`, payload)),
+  upsertEditorial: (problemId: string, payload: EditorialPayload) =>
     unwrap<Editorial>(api.post(`/admin/problems/${problemId}/editorial`, payload)),
   updateEditorial: (id: string, payload: { title?: string; content?: string }) =>
     unwrap<Editorial>(api.patch(`/admin/editorials/${id}`, payload)),
@@ -387,5 +578,82 @@ export const adminApi = {
     payload: { languageId: string; languageVersionId?: string | null; code: string }
   ) => unwrap(api.post(`/admin/problems/${problemId}/starter-code`, payload)),
   updateProblemStarterCode: (problemId: string, starterCodeId: string, code: string) =>
-    unwrap(api.patch(`/admin/problems/${problemId}/starter-code/${starterCodeId}`, { code }))
+    unwrap(api.patch(`/admin/problems/${problemId}/starter-code/${starterCodeId}`, { code })),
+  rejudgeSubmission: (submissionId: string) =>
+    unwrap<{ submissionId: string; status: string }>(api.post(`/admin/submissions/${submissionId}/rejudge`)),
+  rejudgeSubmissions: (payload: {
+    problemSlug?: string;
+    status?: Submission["status"];
+    language?: string;
+    dateFrom?: string;
+    dateTo?: string;
+    limit?: number;
+  }) => unwrap<{ queued: number; submissionIds: string[] }>(api.post("/admin/submissions/rejudge", payload)),
+  reports: (params?: { status?: ModerationStatus; targetType?: ReportTargetType; limit?: string; page?: string }) =>
+    unwrap<Report[]>(api.get("/admin/reports", { params })),
+  updateReport: (id: string, payload: { status?: ModerationStatus; resolution?: string | null }) =>
+    unwrap<Report>(api.patch(`/admin/reports/${id}`, payload)),
+  auditLogs: (params?: Record<string, string>) => unwrap<AdminAuditLog[]>(api.get("/admin/audit-logs", { params })),
+  abuseAnalytics: (hours = 24) => unwrap<AbuseAnalytics>(api.get("/admin/analytics/abuse", { params: { hours } })),
+  backups: (params?: Record<string, string>) => unwrap<BackupRun[]>(api.get("/admin/backups", { params })),
+  createBackup: () => unwrap<BackupRun>(api.post("/admin/backups")),
+  productionStatus: () => unwrap<ProductionStatus>(api.get("/admin/monitoring/status")),
+  snapshotHealth: () => unwrap<HealthCheckSnapshot>(api.post("/admin/monitoring/snapshots")),
+  healthSnapshots: (params?: Record<string, string>) =>
+    unwrap<HealthCheckSnapshot[]>(api.get("/admin/monitoring/snapshots", { params })),
+  monitoringAlerts: (params?: Record<string, string>) =>
+    unwrap<MonitoringAlert[]>(api.get("/admin/monitoring/alerts", { params })),
+  acknowledgeAlert: (id: string) => unwrap<MonitoringAlert>(api.patch(`/admin/monitoring/alerts/${id}/acknowledge`)),
+  resolveAlert: (id: string) => unwrap<MonitoringAlert>(api.patch(`/admin/monitoring/alerts/${id}/resolve`)),
+  rateContest: (contestId: string) => unwrap<RatingEvent[]>(api.post(`/admin/contests/${contestId}/rate`)),
+  rollbackContestRatings: (contestId: string) =>
+    unwrap<{ contestId: string; deletedEvents: number; resetUsers: UserRating[] }>(
+      api.post(`/admin/contests/${contestId}/ratings/rollback`)
+    ),
+  scheduleRatingJob: (contestId: string, scheduledAt?: string | null) =>
+    unwrap<ContestRatingJob>(api.post(`/admin/contests/${contestId}/rating-jobs`, { scheduledAt })),
+  ratingJobs: (params?: Record<string, string>) => unwrap<ContestRatingJob[]>(api.get("/admin/ratings/jobs", { params })),
+  processRatingJobs: () => unwrap<{ processed: unknown[] }>(api.post("/admin/ratings/jobs/process")),
+  ratings: (params?: Record<string, string>) => unwrap<UserRating[]>(api.get("/ratings", { params })),
+  problemSets: (params?: Record<string, string>) =>
+    unwrap<LearningCollection[]>(api.get("/admin/problem-sets", { params })),
+  createProblemSet: (payload: LearningCollectionPayload) =>
+    unwrap<LearningCollection>(api.post("/admin/problem-sets", payload)),
+  studyPlans: (params?: Record<string, string>) =>
+    unwrap<LearningCollection[]>(api.get("/admin/study-plans", { params })),
+  createStudyPlan: (payload: LearningCollectionPayload) =>
+    unwrap<LearningCollection>(api.post("/admin/study-plans", payload)),
+  updateLearningCollection: (id: string, payload: Partial<LearningCollectionPayload>) =>
+    unwrap<LearningCollection>(api.patch(`/admin/learning-collections/${id}`, payload)),
+  deleteLearningCollection: (id: string) => unwrap(api.delete(`/admin/learning-collections/${id}`)),
+  setLearningCollectionItems: (
+    id: string,
+    items: Array<{ problemId: string; order?: number; note?: string | null }>
+  ) => unwrap(api.put(`/admin/learning-collections/${id}/items`, { items })),
+  dailyChallenges: (params?: Record<string, string>) =>
+    unwrap<DailyChallenge[]>(api.get("/admin/daily-challenges", { params })),
+  upsertDailyChallenge: (date: string, payload: { problemId: string; rewardXp?: number }) =>
+    unwrap(api.put(`/admin/daily-challenges/${date}`, payload)),
+  badgeDefinitions: (includeInactive = true) =>
+    unwrap<BadgeDefinition[]>(api.get("/admin/badges", { params: { includeInactive: String(includeInactive) } })),
+  createBadgeDefinition: (payload: {
+    key: string;
+    name: string;
+    description: string;
+    icon?: string | null;
+    triggerType: string;
+    triggerValue?: number;
+    isActive?: boolean;
+  }) => unwrap<BadgeDefinition>(api.post("/admin/badges", payload)),
+  updateBadgeDefinition: (
+    id: string,
+    payload: Partial<{
+      name: string;
+      description: string;
+      icon: string | null;
+      triggerType: string;
+      triggerValue: number;
+      isActive: boolean;
+    }>
+  ) => unwrap<BadgeDefinition>(api.patch(`/admin/badges/${id}`, payload))
 };

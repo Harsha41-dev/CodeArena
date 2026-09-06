@@ -286,7 +286,7 @@ export class TestCaseGenerationService {
   async cancelJob(jobId: string) {
     const job = await this.getJob(jobId);
 
-    // already finished — just return as-is
+    // already finished - just return as-is
     if (job.status === "COMPLETED" || job.status === "FAILED" || job.status === "CANCELLED") {
       return job;
     }

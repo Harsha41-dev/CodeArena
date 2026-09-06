@@ -14,7 +14,11 @@ export class SocialController {
       includeDraft = true;
     }
 
-    const editorial = await this.socialService.editorial(slug, includeDraft);
+    const editorial = await this.socialService.editorial(slug, {
+      includeDraft,
+      userId: req.user?.id,
+      isAdmin: req.user?.role === "ADMIN"
+    });
     sendSuccess(res, "Editorial", editorial);
   };
 
@@ -51,8 +55,16 @@ export class SocialController {
 
   discussions = async (req: Request, res: Response): Promise<void> => {
     const slug = req.params.slug;
-    const items = await this.socialService.discussions(slug);
+    const sort = req.query.sort as "newest" | "top" | "unanswered" | undefined;
+    const items = await this.socialService.discussions(slug, sort);
     sendSuccess(res, "Discussions", items);
+  };
+
+  contestDiscussions = async (req: Request, res: Response): Promise<void> => {
+    const contestId = req.params.id;
+    const sort = req.query.sort as "newest" | "top" | "unanswered" | undefined;
+    const items = await this.socialService.contestDiscussions(contestId, sort);
+    sendSuccess(res, "Contest discussions", items);
   };
 
   createDiscussion = async (req: Request, res: Response): Promise<void> => {
@@ -60,6 +72,13 @@ export class SocialController {
     const authorId = req.user!.id;
     const discussion = await this.socialService.createDiscussion(slug, authorId, req.body);
     sendSuccess(res, "Discussion created", discussion, undefined, 201);
+  };
+
+  createContestDiscussion = async (req: Request, res: Response): Promise<void> => {
+    const contestId = req.params.id;
+    const authorId = req.user!.id;
+    const discussion = await this.socialService.createContestDiscussion(contestId, authorId, req.body);
+    sendSuccess(res, "Contest discussion created", discussion, undefined, 201);
   };
 
   listGeneralDiscussions = async (req: Request, res: Response): Promise<void> => {
@@ -71,7 +90,8 @@ export class SocialController {
     const page = await this.socialService.listGeneralDiscussions({
       page: req.query.page,
       limit: req.query.limit,
-      search
+      search,
+      sort: req.query.sort as "newest" | "top" | "unanswered" | undefined
     });
 
     sendSuccess(res, "Discussions", page.items, {
@@ -89,7 +109,7 @@ export class SocialController {
 
   getDiscussion = async (req: Request, res: Response): Promise<void> => {
     const id = req.params.id;
-    const discussion = await this.socialService.getDiscussion(id);
+    const discussion = await this.socialService.getDiscussion(id, req.user?.id);
     sendSuccess(res, "Discussion", discussion);
   };
 
@@ -146,6 +166,21 @@ export class SocialController {
 
     const vote = await this.socialService.voteDiscussion(id, userId, value);
     sendSuccess(res, "Discussion vote recorded", vote);
+  };
+
+  markCommentHelpful = async (req: Request, res: Response): Promise<void> => {
+    const vote = await this.socialService.markCommentHelpful(req.params.id, req.user!.id);
+    sendSuccess(res, "Helpful vote recorded", vote, undefined, 201);
+  };
+
+  unmarkCommentHelpful = async (req: Request, res: Response): Promise<void> => {
+    await this.socialService.unmarkCommentHelpful(req.params.id, req.user!.id);
+    sendSuccess(res, "Helpful vote removed", {});
+  };
+
+  acceptAnswer = async (req: Request, res: Response): Promise<void> => {
+    const accepted = await this.socialService.acceptAnswer(req.params.id, req.body.commentId, req.user!.id);
+    sendSuccess(res, "Accepted answer saved", accepted);
   };
 
   bookmarks = async (req: Request, res: Response): Promise<void> => {

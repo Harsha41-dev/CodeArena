@@ -19,7 +19,7 @@ export const swaggerDocument = {
     title: "CodeArena API",
     version: "1.0.0",
     description:
-      "API for my CodeArena project — auth, problems, run/submit, contests, discussions, languages, and admin test generation."
+      "API for my CodeArena project - auth, problems, run/submit, contests, discussions, languages, and admin test generation."
   },
   servers: [{ url: "http://localhost:4000" }],
   tags: [
@@ -92,6 +92,14 @@ export const swaggerDocument = {
           content: { "application/json": { schema: { $ref: "#/components/schemas/UpdateProfileRequest" } } }
         },
         responses: { 200: { description: "Profile updated" }, ...standardErrors }
+      }
+    },
+    "/api/v1/users/{username}": {
+      get: {
+        tags: ["Users"],
+        summary: "Get public user profile",
+        parameters: [{ name: "username", in: "path", required: true, schema: { type: "string" } }],
+        responses: { 200: { description: "Public profile" }, ...standardErrors }
       }
     },
     "/api/v1/users/{username}/stats": {
@@ -173,6 +181,57 @@ export const swaggerDocument = {
     "/api/v1/tags": {
       get: { tags: ["Problems"], summary: "List problem tags", responses: { 200: { description: "Tags" } } }
     },
+    "/api/v1/daily-challenge": {
+      get: {
+        tags: ["Problems"],
+        summary: "Get today's public daily challenge problem",
+        responses: { 200: { description: "Daily challenge" }, ...standardErrors }
+      }
+    },
+    "/api/v1/recommendations/next": {
+      get: {
+        tags: ["Problems"],
+        summary: "Get the next recommended public problem for the current user",
+        responses: { 200: { description: "Recommended problem" }, ...standardErrors }
+      }
+    },
+    "/api/v1/problem-sets": {
+      get: {
+        tags: ["Problems"],
+        summary: "List curated practice problem sets",
+        responses: { 200: { description: "Curated problem sets" }, ...standardErrors }
+      }
+    },
+    "/api/v1/problem-sets/{slug}": {
+      get: {
+        tags: ["Problems"],
+        summary: "Get one curated problem set with its problems",
+        parameters: [{ name: "slug", in: "path", required: true, schema: { type: "string", example: "top-75" } }],
+        responses: { 200: { description: "Problem set detail" }, ...standardErrors }
+      }
+    },
+    "/api/v1/study-plans": {
+      get: {
+        tags: ["Problems"],
+        summary: "List ordered study plans with progress and daily unlock metadata",
+        responses: { 200: { description: "Study plan summaries" }, ...standardErrors }
+      }
+    },
+    "/api/v1/study-plans/{slug}": {
+      get: {
+        tags: ["Problems"],
+        summary: "Get one study plan with ordered problems",
+        parameters: [{ name: "slug", in: "path", required: true, schema: { type: "string", example: "beginner-roadmap" } }],
+        responses: { 200: { description: "Study plan detail" }, ...standardErrors }
+      }
+    },
+    "/api/v1/revision-queue": {
+      get: {
+        tags: ["Problems"],
+        summary: "List attempted unsolved problems for revision",
+        responses: { 200: { description: "Revision queue" }, ...standardErrors }
+      }
+    },
     "/api/v1/problems": {
       get: {
         tags: ["Problems"],
@@ -182,6 +241,21 @@ export const swaggerDocument = {
           { name: "limit", in: "query", schema: { type: "integer", minimum: 1, maximum: 100 } },
           { name: "difficulty", in: "query", schema: { $ref: "#/components/schemas/Difficulty" } },
           { name: "tag", in: "query", schema: { type: "string" } },
+          { name: "topic", in: "query", schema: { type: "string" } },
+          { name: "company", in: "query", schema: { type: "string" } },
+          {
+            name: "status",
+            in: "query",
+            schema: { type: "string", enum: ["NOT_ATTEMPTED", "ATTEMPTED", "SOLVED"] }
+          },
+          {
+            name: "sort",
+            in: "query",
+            schema: {
+              type: "string",
+              enum: ["newest", "oldest", "title", "difficulty", "acceptance", "submissions", "solved", "frequency"]
+            }
+          },
           { name: "search", in: "query", schema: { type: "string" } }
         ],
         responses: { 200: { description: "Problems page" }, ...standardErrors }
@@ -200,9 +274,40 @@ export const swaggerDocument = {
     "/api/v1/problems/{slug}": {
       get: {
         tags: ["Problems"],
-        summary: "Get problem with sample test cases",
+        summary: "Get problem with sample test cases and user status when authenticated",
         parameters: [{ name: "slug", in: "path", required: true, schema: { type: "string" } }],
         responses: { 200: { description: "Problem" }, ...standardErrors }
+      }
+    },
+    "/api/v1/admin/problems": {
+      get: {
+        tags: ["Problems"],
+        summary: "List problems across public, private draft, and archived visibility states (admin)",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          { name: "page", in: "query", schema: { type: "integer", minimum: 1 } },
+          { name: "limit", in: "query", schema: { type: "integer", minimum: 1, maximum: 100 } },
+          { name: "difficulty", in: "query", schema: { $ref: "#/components/schemas/Difficulty" } },
+          { name: "tag", in: "query", schema: { type: "string" } },
+          { name: "topic", in: "query", schema: { type: "string" } },
+          { name: "company", in: "query", schema: { type: "string" } },
+          { name: "visibility", in: "query", schema: { type: "string", enum: ["PUBLIC", "PRIVATE", "ARCHIVED"] } },
+          {
+            name: "status",
+            in: "query",
+            schema: { type: "string", enum: ["NOT_ATTEMPTED", "ATTEMPTED", "SOLVED"] }
+          },
+          {
+            name: "sort",
+            in: "query",
+            schema: {
+              type: "string",
+              enum: ["newest", "oldest", "title", "difficulty", "acceptance", "submissions", "solved", "frequency"]
+            }
+          },
+          { name: "search", in: "query", schema: { type: "string" } }
+        ],
+        responses: { 200: { description: "Admin problem catalog" }, ...standardErrors }
       }
     },
     "/api/v1/languages": {
@@ -424,7 +529,7 @@ export const swaggerDocument = {
     "/api/v1/problems/{slug}/editorial": {
       get: {
         tags: ["Social"],
-        summary: "Get published editorial for a problem",
+        summary: "Get published editorial after an attempt; admins may preview drafts",
         parameters: [
           { name: "slug", in: "path", required: true, schema: { type: "string" } },
           { name: "includeDraft", in: "query", schema: { type: "boolean" } }
@@ -436,7 +541,10 @@ export const swaggerDocument = {
       get: {
         tags: ["Social"],
         summary: "List discussions for a problem",
-        parameters: [{ name: "slug", in: "path", required: true, schema: { type: "string" } }],
+        parameters: [
+          { name: "slug", in: "path", required: true, schema: { type: "string" } },
+          { name: "sort", in: "query", schema: { type: "string", enum: ["newest", "top", "unanswered"] } }
+        ],
         responses: { 200: { description: "Discussions" }, ...standardErrors }
       },
       post: {
@@ -616,7 +724,7 @@ export const swaggerDocument = {
         security: [{ bearerAuth: [] }],
         requestBody: {
           required: true,
-          content: { "application/json": { schema: { $ref: "#/components/schemas/SubmitCodeRequest" } } }
+          content: { "application/json": { schema: { $ref: "#/components/schemas/RunCodeRequest" } } }
         },
         responses: { 200: { description: "Run results" }, ...standardErrors }
       }
@@ -650,6 +758,19 @@ export const swaggerDocument = {
         tags: ["Submissions"],
         summary: "List current user's submissions",
         security: [{ bearerAuth: [] }],
+        parameters: [
+          { name: "page", in: "query", schema: { type: "integer", minimum: 1 } },
+          { name: "limit", in: "query", schema: { type: "integer", minimum: 1, maximum: 100 } },
+          { name: "problemSlug", in: "query", schema: { type: "string" } },
+          {
+            name: "status",
+            in: "query",
+            schema: { $ref: "#/components/schemas/SubmissionStatus" }
+          },
+          { name: "language", in: "query", schema: { type: "string" } },
+          { name: "dateFrom", in: "query", schema: { type: "string", format: "date-time" } },
+          { name: "dateTo", in: "query", schema: { type: "string", format: "date-time" } }
+        ],
         responses: { 200: { description: "Submissions" }, ...standardErrors }
       }
     },
@@ -681,6 +802,27 @@ export const swaggerDocument = {
           },
           ...standardErrors
         }
+      }
+    },
+    "/api/v1/admin/submissions/rejudge": {
+      post: {
+        tags: ["Submissions"],
+        summary: "Bulk rejudge submissions by filter (admin)",
+        security: [{ bearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: { "application/json": { schema: { $ref: "#/components/schemas/RejudgeSubmissionsRequest" } } }
+        },
+        responses: { 200: { description: "Submissions queued for rejudge" }, ...standardErrors }
+      }
+    },
+    "/api/v1/admin/submissions/{id}/rejudge": {
+      post: {
+        tags: ["Submissions"],
+        summary: "Rejudge one submission (admin)",
+        security: [{ bearerAuth: [] }],
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+        responses: { 200: { description: "Submission queued for rejudge" }, ...standardErrors }
       }
     },
     "/api/v1/leaderboard": {
@@ -823,6 +965,28 @@ export const swaggerDocument = {
         responses: { 200: { description: "Contest leaderboard" }, ...standardErrors }
       }
     },
+    "/api/v1/contests/{id}/discussions": {
+      get: {
+        tags: ["Contests", "Social"],
+        summary: "List contest clarification threads",
+        parameters: [
+          { name: "id", in: "path", required: true, schema: { type: "string" } },
+          { name: "sort", in: "query", schema: { type: "string", enum: ["newest", "top", "unanswered"] } }
+        ],
+        responses: { 200: { description: "Contest discussions" }, ...standardErrors }
+      },
+      post: {
+        tags: ["Contests", "Social"],
+        summary: "Create a contest clarification thread",
+        security: [{ bearerAuth: [] }],
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+        requestBody: {
+          required: true,
+          content: { "application/json": { schema: { $ref: "#/components/schemas/CreateProblemDiscussionRequest" } } }
+        },
+        responses: { 201: { description: "Contest discussion created" }, ...standardErrors }
+      }
+    },
     "/api/v1/discussions": {
       get: {
         tags: ["Social"],
@@ -830,7 +994,8 @@ export const swaggerDocument = {
         parameters: [
           { name: "page", in: "query", schema: { type: "integer", minimum: 1 } },
           { name: "limit", in: "query", schema: { type: "integer", minimum: 1, maximum: 100 } },
-          { name: "search", in: "query", schema: { type: "string" } }
+          { name: "search", in: "query", schema: { type: "string" } },
+          { name: "sort", in: "query", schema: { type: "string", enum: ["newest", "top", "unanswered"] } }
         ],
         responses: { 200: { description: "Discussions" }, ...standardErrors }
       },
@@ -1309,6 +1474,21 @@ export const swaggerDocument = {
           memoryLimitMb: { type: "integer", minimum: 16, maximum: 1024, default: 256 }
         }
       },
+      RunCodeRequest: {
+        type: "object",
+        required: ["code"],
+        properties: {
+          problemSlug: { type: "string", example: "two-sum" },
+          problemId: { type: "string" },
+          language: { type: "string", example: "rust" },
+          languageId: { type: "string" },
+          languageVersionId: { type: "string" },
+          languageKey: { type: "string", example: "python" },
+          version: { type: "string", example: "3.11" },
+          code: { type: "string", maxLength: 64000 },
+          testCaseId: { type: "string", description: "Optional sample testcase id to run by itself" }
+        }
+      },
       SubmitCodeRequest: {
         type: "object",
         required: ["code"],
@@ -1336,6 +1516,17 @@ export const swaggerDocument = {
           version: { type: "string", example: "3.11" },
           code: { type: "string", maxLength: 64000 },
           input: { type: "string", maxLength: 64000 }
+        }
+      },
+      RejudgeSubmissionsRequest: {
+        type: "object",
+        properties: {
+          problemSlug: { type: "string", example: "two-sum" },
+          status: { $ref: "#/components/schemas/SubmissionStatus" },
+          language: { type: "string", example: "python" },
+          dateFrom: { type: "string", format: "date-time" },
+          dateTo: { type: "string", format: "date-time" },
+          limit: { type: "integer", minimum: 1, maximum: 500, default: 100 }
         }
       },
       CreateContestRequest: {

@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, useLocation, useParams } from "react-router-dom";
-import { ListChecks, RefreshCcw, Trophy, UsersRound } from "lucide-react";
+import { ListChecks, Megaphone, MessageSquare, RefreshCcw, Trophy, UsersRound } from "lucide-react";
 import { contestsApi, problemsApi } from "../services/api";
 import { Button } from "../components/Button";
 import { ContestTimer } from "../components/ContestTimer";
@@ -39,6 +39,12 @@ export function ContestDetailPage() {
     enabled: Boolean(id)
   });
 
+  const announcements = useQuery({
+    queryKey: ["contest-announcements", id],
+    queryFn: () => contestsApi.announcements(id),
+    enabled: Boolean(id)
+  });
+
   const register = useMutation({
     mutationFn: () => contestsApi.register(id)
   });
@@ -70,6 +76,7 @@ export function ContestDetailPage() {
   const durationHours = Math.max(1, Math.round((endMs - startMs) / 3600000));
   const rankedCount = leaderboard.data?.length ?? 0;
   const previewRows = (leaderboard.data ?? []).slice(0, 6);
+  const isUpsolve = data.status === "ENDED";
 
   function handleRegister() {
     if (!user) {
@@ -108,8 +115,25 @@ export function ContestDetailPage() {
                 <UsersRound className="h-4 w-4" /> Standings
               </Button>
             </Link>
+            <Link to={`/contests/${id}/discussions`}>
+              <Button variant="secondary">
+                <MessageSquare className="h-4 w-4" /> Clarifications
+              </Button>
+            </Link>
+            {isUpsolve ? (
+              <Link to="/virtual-contest">
+                <Button variant="secondary">
+                  <RefreshCcw className="h-4 w-4" /> Virtual Contest
+                </Button>
+              </Link>
+            ) : null}
           </div>
         </div>
+        {isUpsolve ? (
+          <p className="mt-3 rounded-md bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">
+            Upsolve mode is active. Problem submissions are saved as normal practice attempts after the contest ends.
+          </p>
+        ) : null}
         {register.isSuccess ? <p className="mt-3 text-sm text-emerald-600">Registration confirmed.</p> : null}
         {register.isError ? (
           <div className="mt-3">
@@ -124,6 +148,28 @@ export function ContestDetailPage() {
         <StatsCard label="Duration" value={`${durationHours}h`} />
         <StatsCard label="Mode" value={data.status} />
       </div>
+
+      {announcements.data?.length ? (
+        <section className="ca-panel overflow-hidden">
+          <div className="flex items-center gap-2 border-b border-slate-200 px-5 py-4 dark:border-slate-800">
+            <Megaphone className="h-4 w-4 text-accent-600" />
+            <h2 className="font-semibold">Announcements</h2>
+          </div>
+          <div className="divide-y divide-slate-100 dark:divide-white/5">
+            {announcements.data.map((announcement) => (
+              <article key={announcement.id} className="px-5 py-4">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <h3 className="font-semibold text-slate-900 dark:text-white">{announcement.title}</h3>
+                  <span className="text-xs text-slate-500">{formatDateTime(announcement.createdAt)}</span>
+                </div>
+                <p className="mt-2 whitespace-pre-wrap text-sm text-slate-600 dark:text-slate-300">
+                  {announcement.content}
+                </p>
+              </article>
+            ))}
+          </div>
+        </section>
+      ) : null}
 
       {standingsMode ? (
         <section className="ca-panel overflow-hidden">

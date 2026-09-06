@@ -16,7 +16,7 @@ export class LeaderboardController {
     sendSuccess(res, "Problem leaderboard", rows);
   };
 
-  // admin only — used to freeze ranks for "moved up/down" UI
+  // admin only - used to freeze ranks for "moved up/down" UI
   snapshot = async (_req: Request, res: Response): Promise<void> => {
     const result = await this.leaderboardService.snapshot();
     sendSuccess(res, "Leaderboard snapshot generated", result, undefined, 201);

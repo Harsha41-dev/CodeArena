@@ -29,7 +29,7 @@ function loadFromStorage(): Pick<AuthState, "user" | "accessToken" | "refreshTok
       refreshToken: parsed.refreshToken ?? null
     };
   } catch {
-    // bad json from an old build — start clean
+    // bad json from an old build - start clean
     return { user: null, accessToken: null, refreshToken: null };
   }
 }

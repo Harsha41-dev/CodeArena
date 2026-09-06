@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-// register body — keep password min 8 for now
+// register body - keep password min 8 for now
 export const registerSchema = z.object({
   body: z.object({
     email: z.string().email(),
@@ -29,7 +29,7 @@ export const refreshSchema = z.object({
 
 export const logoutSchema = z.object({
   body: z.object({
-    // optional — frontend might already have cleared storage
+    // optional - frontend might already have cleared storage
     refreshToken: z.string().min(10).optional()
   })
 });

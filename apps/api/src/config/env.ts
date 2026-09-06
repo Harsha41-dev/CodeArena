@@ -30,10 +30,19 @@ const envSchema = z.object({
   MAX_GENERATED_CASES_PER_JOB: z.coerce.number().int().positive().default(100),
   MAX_GENERATED_INPUT_BYTES: z.coerce.number().int().positive().default(65_536),
   MAX_GENERATED_OUTPUT_BYTES: z.coerce.number().int().positive().default(65_536),
-  MAX_GENERATION_JOB_RUNTIME_MS: z.coerce.number().int().positive().default(120_000)
+  MAX_GENERATION_JOB_RUNTIME_MS: z.coerce.number().int().positive().default(120_000),
+  BACKUP_DIR: z.string().default("backups"),
+  PG_DUMP_PATH: z.string().default("pg_dump"),
+  BACKUP_TIMEOUT_MS: z.coerce.number().int().positive().default(120_000),
+  OPS_TELEMETRY_RETENTION_DAYS: z.coerce.number().int().min(0).default(30),
+  RATING_JOB_INTERVAL_MS: z.coerce.number().int().min(0).default(300_000),
+  MONITORING_WEBHOOK_URL: z.preprocess(
+    (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
+    z.string().url().optional()
+  )
 });
 
-// parse once at startup — fail fast if env is garbage
+// parse once at startup - fail fast if env is garbage
 export const env = envSchema.parse(process.env);
 
 // mock executor is for tests; don't silently use it in normal dev without opt-in

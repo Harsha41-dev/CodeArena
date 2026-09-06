@@ -3,11 +3,13 @@ import type { AppContext } from "../appContext";
 import { SubmissionController } from "../controllers/SubmissionController";
 import { authenticate } from "../middlewares/auth";
 import { codeExecutionRateLimit } from "../middlewares/rateLimits";
+import { requireRole } from "../middlewares/rbac";
 import { validate } from "../middlewares/validate";
 import { asyncHandler } from "../utils/asyncHandler";
 import { problemSlugSchema } from "../validators/problemValidators";
 import {
   listSubmissionsSchema,
+  rejudgeManySubmissionsSchema,
   runCodeSchema,
   runCustomCodeSchema,
   submissionIdSchema,
@@ -38,6 +40,20 @@ export function createSubmissionsRoutes(context: AppContext): Router {
     authenticate,
     validate(submitCodeSchema),
     asyncHandler(submissions.submit)
+  );
+  router.post(
+    "/admin/submissions/rejudge",
+    authenticate,
+    requireRole("ADMIN"),
+    validate(rejudgeManySubmissionsSchema),
+    asyncHandler(submissions.rejudgeMany)
+  );
+  router.post(
+    "/admin/submissions/:id/rejudge",
+    authenticate,
+    requireRole("ADMIN"),
+    validate(submissionIdSchema),
+    asyncHandler(submissions.rejudge)
   );
   router.get("/submissions/:id/events", authenticate, validate(submissionIdSchema), asyncHandler(submissions.events));
   router.get("/submissions/:id", authenticate, validate(submissionIdSchema), asyncHandler(submissions.get));

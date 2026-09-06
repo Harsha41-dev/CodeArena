@@ -4,7 +4,15 @@ import type { SubmissionStatusEvent } from "../events/SubmissionEventBus";
 import type { Executor } from "../executors/Executor";
 import type { SubmissionQueue } from "../queue/SubmissionQueue";
 import type { AppRepository } from "../repositories/AppRepository";
-import type { Submission, SubmissionStatus, SubmissionTestCaseResult, TestCase } from "../types/domain";
+import type {
+  Contest,
+  ContestProblem,
+  Problem,
+  Submission,
+  SubmissionStatus,
+  SubmissionTestCaseResult,
+  TestCase
+} from "../types/domain";
 import { compareOutput, hashJudgeOutput, normalizeOutput } from "../utils/compareOutput";
 import { getPagination } from "../utils/pagination";
 import type { LanguageResolver, LanguageSelectionInput, ResolvedLanguage } from "./LanguageResolver";
@@ -22,21 +30,9 @@ export class SubmissionService {
   // sample run = only public sample tests, no submission row saved
   async runSamples(
     userId: string,
-    input: { problemSlug?: string; problemId?: string; code: string } & LanguageSelectionInput
+    input: { problemSlug?: string; problemId?: string; code: string; testCaseId?: string } & LanguageSelectionInput
   ) {
-    let problem = null;
-    if (input.problemId) {
-      problem = await this.repository.findProblemById(input.problemId);
-    } else {
-      problem = await this.repository.findProblemBySlug(input.problemSlug ?? "");
-    }
-
-    if (!problem) {
-      throw ApiError.notFound("Problem not found");
-    }
-    if (problem.visibility !== "PUBLIC") {
-      throw ApiError.notFound("Problem not found");
-    }
+    const problem = await this.findPublicProblem(input);
 
     const resolved = await this.languageResolver.resolveForProblem(problem, input);
     logger.info(
@@ -44,19 +40,22 @@ export class SubmissionService {
       "Run request received"
     );
 
-    const testCases = await this.repository.listTestCases(problem.id, true);
+    let testCases = await this.repository.listTestCases(problem.id, true);
+    if (input.testCaseId) {
+      testCases = testCases.filter((testCase) => testCase.id === input.testCaseId);
+    }
     if (testCases.length === 0) {
-      throw ApiError.badRequest("Problem has no sample test cases configured");
+      throw ApiError.badRequest("Sample test case is not configured for this problem");
     }
 
     const results = [];
     for (let i = 0; i < testCases.length; i++) {
-      const tc = testCases[i];
-      const result = await this.runTestCase(problem.slug, input.code, resolved, tc);
+      const testCase = testCases[i];
+      const result = await this.runTestCase(problem.slug, input.code, resolved, testCase);
       results.push(result);
     }
 
-    // mark as attempted (not solved) — solved only happens after official AC
+    // mark as attempted (not solved) - solved only happens after official AC
     await this.repository.upsertSolvedStatus(userId, problem.id, false);
 
     return {
@@ -66,10 +65,7 @@ export class SubmissionService {
   }
 
   async runCustom(_userId: string, input: { problemId: string; code: string; input: string } & LanguageSelectionInput) {
-    const problem = await this.repository.findProblemById(input.problemId);
-    if (!problem || problem.visibility !== "PUBLIC") {
-      throw ApiError.notFound("Problem not found");
-    }
+    const problem = await this.findPublicProblem({ problemId: input.problemId });
 
     const resolved = await this.languageResolver.resolveForProblem(problem, input);
     logger.info(
@@ -112,16 +108,7 @@ export class SubmissionService {
     userId: string,
     input: { problemSlug?: string; problemId?: string; code: string; contestId?: string } & LanguageSelectionInput
   ) {
-    let problem = null;
-    if (input.problemId) {
-      problem = await this.repository.findProblemById(input.problemId);
-    } else {
-      problem = await this.repository.findProblemBySlug(input.problemSlug ?? "");
-    }
-
-    if (!problem || problem.visibility !== "PUBLIC") {
-      throw ApiError.notFound("Problem not found");
-    }
+    const problem = await this.findPublicProblem(input);
 
     const resolved = await this.languageResolver.resolveForProblem(problem, input);
     logger.info(
@@ -140,14 +127,9 @@ export class SubmissionService {
       if (!contest || contest.visibility !== "PUBLIC") {
         throw ApiError.notFound("Contest not found");
       }
+      assertContestIsLive(contest);
 
-      let problemInContest = false;
-      for (let i = 0; i < contest.problems.length; i++) {
-        if (contest.problems[i].problemId === problem.id) {
-          problemInContest = true;
-          break;
-        }
-      }
+      const problemInContest = contest.problems.some((contestProblem) => contestProblem.problemId === problem.id);
       if (!problemInContest) {
         throw ApiError.badRequest("Problem is not part of this contest");
       }
@@ -182,8 +164,15 @@ export class SubmissionService {
     }
 
     await this.queue.addSubmission(submission.id);
+    let queuePosition: number | undefined;
+    try {
+      const metrics = await this.queue.getMetrics();
+      queuePosition = metrics.pending;
+    } catch {
+      queuePosition = undefined;
+    }
     logger.info({ submissionId: submission.id, userId, problemSlug: problem.slug }, "Submit request queued");
-    return submission;
+    return { ...submission, queuePosition };
   }
 
   async getSubmission(userId: string, submissionId: string, isAdmin: boolean) {
@@ -210,7 +199,15 @@ export class SubmissionService {
 
   async list(
     userId: string,
-    input: { page?: unknown; limit?: unknown; problemSlug?: string; status?: SubmissionStatus },
+    input: {
+      page?: unknown;
+      limit?: unknown;
+      problemSlug?: string;
+      status?: SubmissionStatus;
+      language?: string;
+      dateFrom?: string;
+      dateTo?: string;
+    },
     isAdmin: boolean
   ) {
     const pagination = getPagination(input);
@@ -218,15 +215,27 @@ export class SubmissionService {
     let problemId: string | undefined;
     if (input.problemSlug) {
       const problem = await this.repository.findProblemBySlug(input.problemSlug);
-      problemId = problem?.id;
+      if (!problem) {
+        return {
+          items: [],
+          total: 0,
+          page: pagination.page,
+          limit: pagination.limit
+        };
+      }
+      problemId = problem.id;
     }
 
-    return this.repository.listSubmissions({
+    const page = await this.repository.listSubmissions({
       ...pagination,
       userId: isAdmin ? undefined : userId,
       problemId,
-      status: input.status
+      status: input.status,
+      language: input.language,
+      dateFrom: parseDateQuery(input.dateFrom),
+      dateTo: parseDateQuery(input.dateTo)
     });
+    return this.enrichSubmissionsWithProblems(page);
   }
 
   async listByProblem(userId: string, slug: string, isAdmin: boolean) {
@@ -238,12 +247,88 @@ export class SubmissionService {
       throw ApiError.notFound("Problem not found");
     }
 
-    return this.repository.listSubmissions({
+    const page = await this.repository.listSubmissions({
       page: 1,
       limit: 50,
       userId: isAdmin ? undefined : userId,
       problemId: problem.id
     });
+    return this.enrichSubmissionsWithProblems(page);
+  }
+
+  async rejudgeSubmission(submissionId: string) {
+    const submission = await this.repository.findSubmissionById(submissionId);
+    if (!submission) {
+      throw ApiError.notFound("Submission not found");
+    }
+
+    await this.repository.clearSubmissionResults(submissionId);
+    const updated = await this.repository.updateSubmission(submissionId, {
+      status: "PENDING",
+      runtimeMs: null,
+      memoryKb: null,
+      errorMessage: null,
+      completedAt: null
+    });
+    await this.repository.updateContestSubmissionStatus(submissionId, "PENDING", 0);
+    await this.queue.addSubmission(submissionId);
+    return updated;
+  }
+
+  async rejudgeMany(input: {
+    problemSlug?: string;
+    status?: SubmissionStatus;
+    language?: string;
+    dateFrom?: string;
+    dateTo?: string;
+    limit?: unknown;
+  }) {
+    let problemId: string | undefined;
+    if (input.problemSlug) {
+      const problem = await this.repository.findProblemBySlug(input.problemSlug);
+      if (!problem) {
+        return { queued: 0, submissionIds: [] };
+      }
+      problemId = problem.id;
+    }
+
+    const rawLimit = Number(input.limit);
+    const limit = Number.isFinite(rawLimit) ? Math.min(Math.max(1, rawLimit), 500) : 100;
+    const page = await this.repository.listSubmissions({
+      page: 1,
+      limit,
+      problemId,
+      status: input.status,
+      language: input.language,
+      dateFrom: parseDateQuery(input.dateFrom),
+      dateTo: parseDateQuery(input.dateTo)
+    });
+
+    const submissionIds: string[] = [];
+    for (const submission of page.items) {
+      await this.rejudgeSubmission(submission.id);
+      submissionIds.push(submission.id);
+    }
+
+    return {
+      queued: submissionIds.length,
+      submissionIds
+    };
+  }
+
+  private async findPublicProblem(input: { problemSlug?: string; problemId?: string }): Promise<Problem> {
+    let problem: Problem | null = null;
+    if (input.problemId) {
+      problem = await this.repository.findProblemById(input.problemId);
+    } else {
+      problem = await this.repository.findProblemBySlug(input.problemSlug ?? "");
+    }
+
+    if (!problem || problem.visibility !== "PUBLIC") {
+      throw ApiError.notFound("Problem not found");
+    }
+
+    return problem;
   }
 
   private async runTestCase(problemSlug: string, code: string, resolved: ResolvedLanguage, testCase: TestCase) {
@@ -317,6 +402,33 @@ export class SubmissionService {
     }
 
     return submission;
+  }
+
+  private async enrichSubmissionsWithProblems<T extends Submission>(page: {
+    items: T[];
+    total: number;
+    page: number;
+    limit: number;
+  }) {
+    const problemCache = new Map<string, Awaited<ReturnType<AppRepository["findProblemById"]>>>();
+    const items = [];
+
+    for (const submission of page.items) {
+      let problem = problemCache.get(submission.problemId);
+      if (!problemCache.has(submission.problemId)) {
+        problem = await this.repository.findProblemById(submission.problemId);
+        problemCache.set(submission.problemId, problem);
+      }
+      items.push({
+        ...submission,
+        problem: problem ?? undefined
+      });
+    }
+
+    return {
+      ...page,
+      items
+    };
   }
 
   // hide hidden test I/O from normal users
@@ -393,6 +505,27 @@ function sampleRunStatus(results: Array<{ status: SubmissionStatus }>): Submissi
     }
   }
   return "ACCEPTED";
+}
+
+function assertContestIsLive(contest: Contest & { problems: ContestProblem[] }): void {
+  const now = Date.now();
+  if (now < contest.startTime.getTime()) {
+    throw ApiError.forbidden("Contest has not started yet");
+  }
+  if (now > contest.endTime.getTime()) {
+    throw ApiError.forbidden("Contest has ended");
+  }
+}
+
+function parseDateQuery(value?: string): Date | undefined {
+  if (!value) {
+    return undefined;
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return undefined;
+  }
+  return date;
 }
 
 export function executionProfileFromResolved(resolved: ResolvedLanguage) {

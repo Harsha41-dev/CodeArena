@@ -1,7 +1,7 @@
 import { FormEvent, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useParams } from "react-router-dom";
-import { MessageSquarePlus, ThumbsDown, ThumbsUp, UserRound } from "lucide-react";
+import { CheckCircle2, MessageSquarePlus, ThumbsDown, ThumbsUp, UserRound } from "lucide-react";
 import { socialApi } from "../services/api";
 import { Button } from "../components/Button";
 import { EmptyState, ErrorState, LoadingState } from "../components/State";
@@ -32,6 +32,21 @@ export function DiscussionDetailPage() {
 
   const vote = useMutation({
     mutationFn: (value: 1 | -1) => socialApi.voteDiscussion(id, value),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["discussion", id] });
+    }
+  });
+
+  const helpful = useMutation({
+    mutationFn: ({ commentId, isHelpfulByMe }: { commentId: string; isHelpfulByMe: boolean }) =>
+      isHelpfulByMe ? socialApi.unmarkCommentHelpful(commentId) : socialApi.markCommentHelpful(commentId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["discussion", id] });
+    }
+  });
+
+  const acceptAnswer = useMutation({
+    mutationFn: (commentId: string) => socialApi.acceptAnswer(id, commentId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["discussion", id] });
     }
@@ -78,6 +93,12 @@ export function DiscussionDetailPage() {
   const authorName = data.author?.username ?? "community";
   const downvotes = data.downvotes ?? 0;
   const canInteract = Boolean(user) && !vote.isPending;
+  const canAcceptAnswer = Boolean(user && (user.role === "ADMIN" || data.author?.id === user.id));
+  const sortedComments = [...data.comments].sort((a, b) => {
+    const acceptedDiff = Number(Boolean(b.isAcceptedAnswer)) - Number(Boolean(a.isAcceptedAnswer));
+    if (acceptedDiff !== 0) return acceptedDiff;
+    return (b.helpfulVotes ?? 0) - (a.helpfulVotes ?? 0) || new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+  });
 
   return (
     <div className="space-y-5">
@@ -85,7 +106,7 @@ export function DiscussionDetailPage() {
         to="/discuss"
         className="text-sm font-medium text-emerald-600 hover:text-emerald-700 dark:text-emerald-400 dark:hover:text-emerald-300"
       >
-        ← Back to discussions
+        Back to discussions
       </Link>
 
       <section className="ca-panel p-6">
@@ -121,12 +142,53 @@ export function DiscussionDetailPage() {
           Comments
         </div>
         <div className="divide-y divide-slate-100 dark:divide-slate-800">
-          {data.comments.map((item) => (
-            <article key={item.id} className="px-5 py-4">
-              <p className="text-sm text-slate-700 dark:text-slate-300">{item.content}</p>
-              <p className="mt-2 text-xs text-slate-500">{formatDateTime(item.createdAt)}</p>
-            </article>
-          ))}
+          {sortedComments.map((item) => {
+            const helpfulCount = item.helpfulVotes ?? 0;
+            const hasHelpfulVotes = helpfulCount > 0;
+            const isHelpfulByMe = Boolean(item.isHelpfulByMe);
+            return (
+              <article key={item.id} className="px-5 py-4">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="min-w-0 flex-1">
+                    {item.isAcceptedAnswer ? (
+                      <span className="mb-2 inline-flex items-center gap-1 rounded-md bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">
+                        <CheckCircle2 className="h-3.5 w-3.5" />
+                        Accepted answer
+                      </span>
+                    ) : hasHelpfulVotes ? (
+                      <span className="mb-2 inline-flex items-center gap-1 rounded-md bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">
+                        <CheckCircle2 className="h-3.5 w-3.5" />
+                        {helpfulCount} helpful
+                      </span>
+                    ) : null}
+                    <MarkdownRenderer content={item.content} />
+                    <p className="mt-2 text-xs text-slate-500">{formatDateTime(item.createdAt)}</p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      className="h-8 px-2 text-xs"
+                      variant={isHelpfulByMe ? "secondary" : "ghost"}
+                      disabled={!user || helpful.isPending || item.authorId === user?.id}
+                      onClick={() => helpful.mutate({ commentId: item.id, isHelpfulByMe })}
+                    >
+                      <CheckCircle2 className="h-3.5 w-3.5" />
+                      {isHelpfulByMe ? "Helpful" : "Mark Helpful"}
+                    </Button>
+                    {canAcceptAnswer ? (
+                      <Button
+                        className="h-8 px-2 text-xs"
+                        variant={item.isAcceptedAnswer ? "primary" : "secondary"}
+                        disabled={acceptAnswer.isPending}
+                        onClick={() => acceptAnswer.mutate(item.id)}
+                      >
+                        Accept
+                      </Button>
+                    ) : null}
+                  </div>
+                </div>
+              </article>
+            );
+          })}
           {!data.comments.length ? (
             <div className="p-5">
               <EmptyState title="No comments yet" />

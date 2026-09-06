@@ -94,6 +94,98 @@ enum GenerationJobStatus {
   CANCELLED
 }
 
+enum SolutionVisibility {
+  PUBLIC
+  PRIVATE
+  UNLISTED
+}
+
+enum ReportTargetType {
+  PROBLEM
+  SUBMISSION
+  DISCUSSION
+  COMMENT
+  SOLUTION
+  USER
+}
+
+enum ModerationStatus {
+  OPEN
+  TRIAGED
+  RESOLVED
+  DISMISSED
+}
+
+enum NotificationType {
+  FOLLOW
+  DISCUSSION_REPLY
+  SOLUTION_VOTE
+  REPORT_STATUS
+  SYSTEM
+}
+
+enum BackupStatus {
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
+enum HealthStatus {
+  HEALTHY
+  DEGRADED
+  DOWN
+}
+
+enum AuditOutcome {
+  SUCCESS
+  FAILURE
+}
+
+enum LearningCollectionType {
+  STUDY_PLAN
+  CURATED_LIST
+}
+
+enum PracticeSessionType {
+  VIRTUAL_CONTEST
+  MOCK_INTERVIEW
+}
+
+enum PracticeSessionStatus {
+  ACTIVE
+  COMPLETED
+  CANCELLED
+  EXPIRED
+}
+
+enum PracticeOutcome {
+  SOLVED
+  REVIEW
+  SKIPPED
+}
+
+enum EditorialSectionType {
+  TEXT
+  HINT
+  SOLUTION
+  COMPLEXITY
+  DIAGRAM
+}
+
+enum RatingJobStatus {
+  SCHEDULED
+  RUNNING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+enum MonitoringAlertStatus {
+  OPEN
+  ACKNOWLEDGED
+  RESOLVED
+}
+
 model User {
   id                       String                   @id @default(cuid())
   email                    String                   @unique
@@ -127,6 +219,32 @@ model User {
   problemAssets            ProblemAsset[]
   testCaseGenerationJobs   TestCaseGenerationJob[]
   generatedTestCaseBatches GeneratedTestCaseBatch[]
+  solutions                Solution[]               @relation("SolutionAuthor")
+  solutionVotes            SolutionVote[]
+  reportedReports          Report[]                 @relation("ReportReporter")
+  moderatedReports         Report[]                 @relation("ReportModerator")
+  following                UserFollow[]             @relation("UserFollowing")
+  followers                UserFollow[]             @relation("UserFollowers")
+  notifications            Notification[]           @relation("NotificationRecipient")
+  sentNotifications        Notification[]           @relation("NotificationActor")
+  adminAuditLogs           AdminAuditLog[]           @relation("AdminAuditActor")
+  apiUsageEvents           ApiUsageEvent[]
+  backupRuns               BackupRun[]              @relation("BackupRequester")
+  rating                   UserRating?
+  ratingEvents             RatingEvent[]
+  learningCollections      LearningCollection[]      @relation("LearningCollectionCreator")
+  learningProgress         LearningCollectionProgress[]
+  dailyChallengesAssigned  DailyChallenge[]          @relation("DailyChallengeAssigner")
+  dailyChallengeCompletions DailyChallengeCompletion[]
+  badgeDefinitions         BadgeDefinition[]         @relation("BadgeDefinitionCreator")
+  badges                   UserBadge[]
+  practiceSessions         PracticeSession[]
+  helpfulCommentVotes      DiscussionHelpfulVote[]
+  acceptedDiscussionAnswers DiscussionAcceptedAnswer[] @relation("AcceptedAnswerActor")
+  contestAnnouncements     ContestAnnouncement[]     @relation("ContestAnnouncementAuthor")
+  contestRatingJobs        ContestRatingJob[]        @relation("ContestRatingJobRequester")
+  acknowledgedAlerts       MonitoringAlert[]         @relation("MonitoringAlertAcknowledger")
+  resolvedAlerts           MonitoringAlert[]         @relation("MonitoringAlertResolver")
 
   @@index([role, status])
   @@index([country])
@@ -179,6 +297,12 @@ model Problem {
   assets                   ProblemAsset[]
   testCaseGenerationJobs   TestCaseGenerationJob[]
   generatedTestCaseBatches GeneratedTestCaseBatch[]
+  solutions                Solution[]
+  companyTags              ProblemCompany[]
+  learningItems            LearningCollectionItem[]
+  dailyChallenges          DailyChallenge[]
+  dailyChallengeCompletions DailyChallengeCompletion[]
+  practiceSessionProblems  PracticeSessionProblem[]
 
   @@index([difficulty])
   @@index([title])
@@ -310,6 +434,33 @@ model ProblemTag {
   @@index([tagId])
 }
 
+model Company {
+  id        String           @id @default(cuid())
+  name      String           @unique
+  slug      String           @unique
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+  problems  ProblemCompany[]
+
+  @@index([slug])
+}
+
+model ProblemCompany {
+  id         String   @id @default(cuid())
+  problemId  String
+  companyId  String
+  frequency  Int      @default(0)
+  isFeatured Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  problem    Problem  @relation(fields: [problemId], references: [id], onDelete: Cascade)
+  company    Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([problemId, companyId])
+  @@index([companyId, frequency])
+  @@index([problemId])
+}
+
 model TestCase {
   id               String                  @id @default(cuid())
   problemId        String
@@ -421,6 +572,9 @@ model Submission {
   languageVersion         LanguageVersion?           @relation(fields: [languageVersionId], references: [id], onDelete: SetNull)
   testCaseResults         SubmissionTestCaseResult[]
   contestSubmission       ContestSubmission?
+  solutions               Solution[]
+  dailyChallengeCompletions DailyChallengeCompletion[]
+  practiceSessionProblems PracticeSessionProblem[]
 
   @@index([userId])
   @@index([problemId])
@@ -476,6 +630,11 @@ model Contest {
   endTime       DateTime
   status        ContestStatus         @default(UPCOMING)
   visibility    ProblemVisibility     @default(PUBLIC)
+  freezeStartsAt DateTime?
+  isRated       Boolean               @default(true)
+  ratingSeason  String?
+  ratingScheduledAt DateTime?
+  ratingsPublishedAt DateTime?
   createdById   String?
   createdBy     User?                 @relation("ContestCreator", fields: [createdById], references: [id], onDelete: SetNull)
   createdAt     DateTime              @default(now())
@@ -484,10 +643,15 @@ model Contest {
   registrations ContestRegistration[]
   submissions   ContestSubmission[]
   discussions   Discussion[]
+  ratingEvents  RatingEvent[]
+  announcements ContestAnnouncement[]
+  ratingJobs    ContestRatingJob[]
 
   @@index([startTime, endTime])
   @@index([status, startTime])
   @@index([visibility, status])
+  @@index([freezeStartsAt])
+  @@index([ratingsPublishedAt])
 }
 
 model ContestProblem {
@@ -552,6 +716,7 @@ model Discussion {
   author    User                @relation(fields: [authorId], references: [id], onDelete: Cascade)
   comments  DiscussionComment[]
   votes     DiscussionVote[]
+  acceptedAnswer DiscussionAcceptedAnswer?
 
   @@index([problemId, createdAt])
   @@index([contestId, createdAt])
@@ -565,13 +730,17 @@ model DiscussionComment {
   authorId     String
   content      String
   upvotes      Int        @default(0)
+  helpfulVotes Int        @default(0)
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
   discussion   Discussion @relation(fields: [discussionId], references: [id], onDelete: Cascade)
   author       User       @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  helpfulVoteRows DiscussionHelpfulVote[]
+  acceptedAnswer DiscussionAcceptedAnswer?
 
   @@index([discussionId, createdAt])
   @@index([authorId])
+  @@index([helpfulVotes])
 }
 
 model DiscussionVote {
@@ -627,6 +796,124 @@ model ProblemListItem {
   @@index([problemId])
 }
 
+model LearningCollection {
+  id               String                 @id @default(cuid())
+  type             LearningCollectionType
+  slug             String
+  title            String
+  description      String
+  badge            String?
+  dailyUnlockCount Int                    @default(0)
+  visibility       ProblemVisibility      @default(PUBLIC)
+  createdById      String?
+  createdAt        DateTime               @default(now())
+  updatedAt        DateTime               @updatedAt
+  createdBy        User?                  @relation("LearningCollectionCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  items            LearningCollectionItem[]
+  progress         LearningCollectionProgress[]
+
+  @@unique([type, slug])
+  @@index([type, visibility])
+  @@index([createdById])
+}
+
+model LearningCollectionItem {
+  id           String             @id @default(cuid())
+  collectionId String
+  problemId    String
+  order        Int                @default(0)
+  note         String?
+  createdAt    DateTime           @default(now())
+  collection   LearningCollection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+  problem      Problem            @relation(fields: [problemId], references: [id], onDelete: Cascade)
+
+  @@unique([collectionId, problemId])
+  @@index([collectionId, order])
+  @@index([problemId])
+}
+
+model LearningCollectionProgress {
+  id             String             @id @default(cuid())
+  collectionId   String
+  userId         String
+  startedAt      DateTime           @default(now())
+  lastViewedAt   DateTime           @default(now())
+  unlockedCount  Int                @default(0)
+  completedCount Int                @default(0)
+  completedAt    DateTime?
+  collection     LearningCollection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+  user           User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([collectionId, userId])
+  @@index([userId, completedAt])
+}
+
+model DailyChallenge {
+  id          String                     @id @default(cuid())
+  date        DateTime                   @unique @db.Date
+  problemId   String
+  assignedById String?
+  rewardXp    Int                        @default(10)
+  createdAt   DateTime                   @default(now())
+  updatedAt   DateTime                   @updatedAt
+  problem     Problem                    @relation(fields: [problemId], references: [id], onDelete: Cascade)
+  assignedBy  User?                      @relation("DailyChallengeAssigner", fields: [assignedById], references: [id], onDelete: SetNull)
+  completions DailyChallengeCompletion[]
+
+  @@index([problemId])
+}
+
+model DailyChallengeCompletion {
+  id          String         @id @default(cuid())
+  challengeId String
+  userId      String
+  problemId   String
+  submissionId String?
+  completedAt DateTime       @default(now())
+  xpAwarded   Int            @default(0)
+  challenge   DailyChallenge @relation(fields: [challengeId], references: [id], onDelete: Cascade)
+  user        User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  problem     Problem        @relation(fields: [problemId], references: [id], onDelete: Cascade)
+  submission  Submission?    @relation(fields: [submissionId], references: [id], onDelete: SetNull)
+
+  @@unique([challengeId, userId])
+  @@index([userId, completedAt])
+  @@index([problemId])
+}
+
+model BadgeDefinition {
+  id          String      @id @default(cuid())
+  key         String      @unique
+  name        String
+  description String
+  icon        String?
+  triggerType String
+  triggerValue Int       @default(1)
+  isActive    Boolean    @default(true)
+  createdById String?
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  createdBy   User?      @relation("BadgeDefinitionCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  awards      UserBadge[]
+
+  @@index([isActive])
+}
+
+model UserBadge {
+  id        String          @id @default(cuid())
+  userId    String
+  badgeId   String
+  sourceType String?
+  sourceId   String?
+  awardedAt DateTime        @default(now())
+  user      User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  badge     BadgeDefinition @relation(fields: [badgeId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, badgeId, sourceType, sourceId])
+  @@index([userId, awardedAt])
+  @@index([badgeId])
+}
+
 model Note {
   id        String   @id @default(cuid())
   userId    String
@@ -653,9 +940,350 @@ model Editorial {
   updatedAt   DateTime  @updatedAt
   problem     Problem   @relation(fields: [problemId], references: [id], onDelete: Cascade)
   author      User?     @relation(fields: [authorId], references: [id], onDelete: SetNull)
+  sections    EditorialSection[]
+  officialSolutions EditorialOfficialSolution[]
 
   @@index([problemId])
   @@index([isPublished])
+}
+
+model EditorialSection {
+  id          String               @id @default(cuid())
+  editorialId String
+  type        EditorialSectionType @default(TEXT)
+  title       String
+  content     String
+  language    String?
+  order       Int                  @default(0)
+  isLocked    Boolean              @default(false)
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+  editorial   Editorial            @relation(fields: [editorialId], references: [id], onDelete: Cascade)
+
+  @@index([editorialId, order])
+}
+
+model EditorialOfficialSolution {
+  id             String    @id @default(cuid())
+  editorialId    String
+  language       String
+  code           String
+  explanation    String?
+  timeComplexity String?
+  spaceComplexity String?
+  order          Int       @default(0)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  editorial      Editorial @relation(fields: [editorialId], references: [id], onDelete: Cascade)
+
+  @@index([editorialId, order])
+  @@index([language])
+}
+
+model Solution {
+  id             String             @id @default(cuid())
+  problemId      String
+  authorId       String
+  submissionId   String?
+  title          String
+  content        String
+  code           String
+  language       String
+  timeComplexity String?
+  spaceComplexity String?
+  visibility     SolutionVisibility @default(PUBLIC)
+  upvotes        Int                @default(0)
+  downvotes      Int                @default(0)
+  isPinned       Boolean            @default(false)
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+  problem        Problem            @relation(fields: [problemId], references: [id], onDelete: Cascade)
+  author         User               @relation("SolutionAuthor", fields: [authorId], references: [id], onDelete: Cascade)
+  submission     Submission?        @relation(fields: [submissionId], references: [id], onDelete: SetNull)
+  votes          SolutionVote[]
+
+  @@index([problemId, visibility, createdAt])
+  @@index([authorId, createdAt])
+  @@index([submissionId])
+}
+
+model SolutionVote {
+  id         String   @id @default(cuid())
+  solutionId String
+  userId     String
+  value      Int
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  solution   Solution @relation(fields: [solutionId], references: [id], onDelete: Cascade)
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([solutionId, userId])
+  @@index([userId])
+}
+
+model DiscussionHelpfulVote {
+  id        String            @id @default(cuid())
+  commentId String
+  userId    String
+  createdAt DateTime          @default(now())
+  comment   DiscussionComment @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  user      User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([commentId, userId])
+  @@index([userId])
+}
+
+model DiscussionAcceptedAnswer {
+  id           String            @id @default(cuid())
+  discussionId String            @unique
+  commentId    String            @unique
+  acceptedById String
+  createdAt    DateTime          @default(now())
+  discussion   Discussion        @relation(fields: [discussionId], references: [id], onDelete: Cascade)
+  comment      DiscussionComment @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  acceptedBy   User              @relation("AcceptedAnswerActor", fields: [acceptedById], references: [id], onDelete: Cascade)
+
+  @@index([acceptedById])
+}
+
+model Report {
+  id          String           @id @default(cuid())
+  targetType  ReportTargetType
+  targetId    String
+  reporterId  String?
+  reason      String
+  details     String?
+  status      ModerationStatus @default(OPEN)
+  moderatorId String?
+  resolution  String?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  resolvedAt  DateTime?
+  reporter    User?            @relation("ReportReporter", fields: [reporterId], references: [id], onDelete: SetNull)
+  moderator   User?            @relation("ReportModerator", fields: [moderatorId], references: [id], onDelete: SetNull)
+
+  @@index([status, createdAt])
+  @@index([targetType, targetId])
+  @@index([reporterId, createdAt])
+}
+
+model UserFollow {
+  id          String   @id @default(cuid())
+  followerId  String
+  followingId String
+  createdAt   DateTime @default(now())
+  follower    User     @relation("UserFollowing", fields: [followerId], references: [id], onDelete: Cascade)
+  following   User     @relation("UserFollowers", fields: [followingId], references: [id], onDelete: Cascade)
+
+  @@unique([followerId, followingId])
+  @@index([followingId])
+}
+
+model Notification {
+  id        String           @id @default(cuid())
+  userId    String
+  actorId   String?
+  type      NotificationType
+  title     String
+  body      String
+  link      String?
+  readAt    DateTime?
+  createdAt DateTime         @default(now())
+  user      User             @relation("NotificationRecipient", fields: [userId], references: [id], onDelete: Cascade)
+  actor     User?            @relation("NotificationActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([userId, readAt, createdAt])
+  @@index([createdAt])
+}
+
+model AdminAuditLog {
+  id            String       @id @default(cuid())
+  actorId       String?
+  action        String
+  entityType    String
+  entityId      String?
+  requestMethod String?
+  path          String?
+  statusCode    Int?
+  outcome       AuditOutcome @default(SUCCESS)
+  details       Json?
+  ip            String?
+  userAgent     String?
+  createdAt     DateTime     @default(now())
+  actor         User?        @relation("AdminAuditActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([actorId, createdAt])
+  @@index([entityType, createdAt])
+  @@index([createdAt])
+}
+
+model ApiUsageEvent {
+  id          String   @id @default(cuid())
+  userId      String?
+  method      String
+  path        String
+  route       String?
+  statusCode  Int
+  durationMs  Int
+  ip          String?
+  userAgent   String?
+  rateLimited Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  user        User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt])
+  @@index([userId, createdAt])
+  @@index([statusCode, createdAt])
+  @@index([path, createdAt])
+}
+
+model BackupRun {
+  id            String       @id @default(cuid())
+  requestedById String?
+  status        BackupStatus
+  filename      String?
+  sizeBytes     Int?
+  errorMessage  String?
+  startedAt     DateTime     @default(now())
+  completedAt   DateTime?
+  createdAt     DateTime     @default(now())
+  requestedBy    User?        @relation("BackupRequester", fields: [requestedById], references: [id], onDelete: SetNull)
+
+  @@index([status, createdAt])
+  @@index([requestedById, createdAt])
+}
+
+model HealthCheckSnapshot {
+  id        String       @id @default(cuid())
+  status    HealthStatus
+  details   Json
+  createdAt DateTime     @default(now())
+
+  @@index([status, createdAt])
+  @@index([createdAt])
+}
+
+model PracticeSession {
+  id              String                @id @default(cuid())
+  userId          String
+  type            PracticeSessionType
+  status          PracticeSessionStatus @default(ACTIVE)
+  title           String
+  durationSeconds Int
+  startedAt       DateTime              @default(now())
+  finishedAt      DateTime?
+  settings        Json?
+  summary         Json?
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+  user            User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  problems        PracticeSessionProblem[]
+
+  @@index([userId, type, startedAt])
+  @@index([status, startedAt])
+}
+
+model PracticeSessionProblem {
+  id          String           @id @default(cuid())
+  sessionId   String
+  problemId   String
+  order       Int              @default(0)
+  outcome     PracticeOutcome?
+  secondsSpent Int?
+  submissionId String?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  session     PracticeSession  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  problem     Problem          @relation(fields: [problemId], references: [id], onDelete: Cascade)
+  submission  Submission?      @relation(fields: [submissionId], references: [id], onDelete: SetNull)
+
+  @@unique([sessionId, problemId])
+  @@index([problemId])
+}
+
+model ContestAnnouncement {
+  id        String   @id @default(cuid())
+  contestId String
+  authorId  String
+  title     String
+  content   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  contest   Contest  @relation(fields: [contestId], references: [id], onDelete: Cascade)
+  author    User     @relation("ContestAnnouncementAuthor", fields: [authorId], references: [id], onDelete: Cascade)
+
+  @@index([contestId, createdAt])
+}
+
+model ContestRatingJob {
+  id          String          @id @default(cuid())
+  contestId   String
+  requestedById String?
+  status      RatingJobStatus @default(SCHEDULED)
+  scheduledAt DateTime
+  startedAt   DateTime?
+  completedAt DateTime?
+  errorMessage String?
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+  contest     Contest         @relation(fields: [contestId], references: [id], onDelete: Cascade)
+  requestedBy User?           @relation("ContestRatingJobRequester", fields: [requestedById], references: [id], onDelete: SetNull)
+
+  @@index([status, scheduledAt])
+  @@index([contestId])
+}
+
+model MonitoringAlert {
+  id              String                @id @default(cuid())
+  status          MonitoringAlertStatus @default(OPEN)
+  severity        String
+  source          String
+  title           String
+  message         String
+  details         Json?
+  acknowledgedById String?
+  acknowledgedAt DateTime?
+  resolvedById    String?
+  resolvedAt      DateTime?
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+  acknowledgedBy  User?                 @relation("MonitoringAlertAcknowledger", fields: [acknowledgedById], references: [id], onDelete: SetNull)
+  resolvedBy      User?                 @relation("MonitoringAlertResolver", fields: [resolvedById], references: [id], onDelete: SetNull)
+
+  @@index([status, createdAt])
+  @@index([severity, createdAt])
+}
+
+model UserRating {
+  id            String   @id @default(cuid())
+  userId        String   @unique
+  rating        Int      @default(1500)
+  volatility    Int      @default(350)
+  contestsRated Int      @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([rating])
+}
+
+model RatingEvent {
+  id           String   @id @default(cuid())
+  userId       String
+  contestId    String?
+  oldRating    Int
+  newRating    Int
+  delta        Int
+  rank         Int
+  participants Int
+  createdAt    DateTime @default(now())
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  contest      Contest? @relation(fields: [contestId], references: [id], onDelete: SetNull)
+
+  @@unique([userId, contestId])
+  @@index([contestId])
+  @@index([userId, createdAt])
+  @@index([createdAt])
 }
 
 model UserRankSnapshot {

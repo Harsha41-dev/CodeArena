@@ -1,7 +1,12 @@
+import Redis from "ioredis";
 import type { Executor } from "./executors/Executor";
 import { createExecutor } from "./executors";
 import { env } from "./config/env";
-import { InMemorySubmissionEventBus, type SubmissionEventBus } from "./events/SubmissionEventBus";
+import {
+  InMemorySubmissionEventBus,
+  RedisSubmissionEventBus,
+  type SubmissionEventBus
+} from "./events/SubmissionEventBus";
 import { MemoryRepository } from "./repositories/MemoryRepository";
 import { PrismaRepository } from "./repositories/PrismaRepository";
 import type { AppRepository } from "./repositories/AppRepository";
@@ -22,6 +27,8 @@ import { ExecutorCapabilityService } from "./services/executorCapability.service
 import { LanguageResolver } from "./services/LanguageResolver";
 import { LanguageService } from "./services/LanguageService";
 import { LeaderboardService } from "./services/LeaderboardService";
+import { OpsService } from "./services/OpsService";
+import { PracticeService } from "./services/PracticeService";
 import { ProblemService } from "./services/ProblemService";
 import { SocialService } from "./services/SocialService";
 import { SubmissionService } from "./services/SubmissionService";
@@ -30,7 +37,7 @@ import { TestCaseGenerationService } from "./services/TestCaseGenerationService"
 import { TestCaseGenerationWorker } from "./services/TestCaseGenerationWorker";
 import { UserService } from "./services/UserService";
 
-// everything the API needs — repos, queues, workers, services
+// everything the API needs - repos, queues, workers, services
 export interface AppContext {
   repository: AppRepository;
   languageRepository: LanguageRepository;
@@ -51,6 +58,8 @@ export interface AppContext {
     executorCapabilities: ExecutorCapabilityService;
     leaderboards: LeaderboardService;
     social: SocialService;
+    ops: OpsService;
+    practice: PracticeService;
   };
 }
 
@@ -96,6 +105,10 @@ export function createAppContext(options: AppContextOptions = {}): AppContext {
   let submissionEvents: SubmissionEventBus;
   if (options.submissionEvents) {
     submissionEvents = options.submissionEvents;
+  } else if (env.REDIS_URL && env.NODE_ENV !== "test") {
+    const publisher = new Redis(env.REDIS_URL);
+    const subscriber = new Redis(env.REDIS_URL);
+    submissionEvents = new RedisSubmissionEventBus(publisher, subscriber);
   } else {
     submissionEvents = new InMemorySubmissionEventBus();
   }
@@ -173,7 +186,9 @@ export function createAppContext(options: AppContextOptions = {}): AppContext {
       testCaseGeneration,
       contests: new ContestService(repository),
       leaderboards: new LeaderboardService(repository),
-      social: new SocialService(repository)
+      social: new SocialService(repository),
+      ops: new OpsService(repository, queue, executorCapabilities),
+      practice: new PracticeService(repository)
     }
   };
 }

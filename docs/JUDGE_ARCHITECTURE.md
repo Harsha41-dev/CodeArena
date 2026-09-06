@@ -85,7 +85,7 @@ The SSE controller enforces the same auth and ownership policy as submission det
 
 The API sends the current status immediately, sends heartbeat events every 20 seconds, and closes the stream after a terminal verdict. The frontend reconnects on page refresh and falls back to `GET /api/v1/submissions/:id` polling if streaming fails.
 
-`InMemorySubmissionEventBus` is used for local single-process demos and tests. Production deployments with separate API and worker instances should use Redis pub/sub or another shared event backend so worker-published events are visible to every API instance.
+`InMemorySubmissionEventBus` is used for local single-process demos and tests. When `REDIS_URL` is configured outside tests, `RedisSubmissionEventBus` is selected so worker-published events are visible to separate API instances.
 
 ## API Flows
 

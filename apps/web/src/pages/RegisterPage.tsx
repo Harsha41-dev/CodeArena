@@ -20,7 +20,7 @@ export function RegisterPage() {
     event.preventDefault();
     setError("");
 
-    // quick client-side check — server still validates properly
+    // quick client-side check - server still validates properly
     if (!email || !username || !displayName || !password) {
       setError("Please fill all fields.");
       return;

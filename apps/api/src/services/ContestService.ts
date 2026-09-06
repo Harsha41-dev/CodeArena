@@ -1,5 +1,6 @@
 import { ApiError } from "../errors/ApiError";
 import type { AppRepository } from "../repositories/AppRepository";
+import type { Contest, ContestProblem } from "../types/domain";
 
 // contests: list, create, register, leaderboard, etc.
 export class ContestService {
@@ -11,7 +12,7 @@ export class ContestService {
     // only show public ones on the public list
     const publicOnes = [];
     for (let i = 0; i < contests.length; i++) {
-      const contest = contests[i];
+      const contest = this.withDerivedStatus(contests[i]);
       if (contest.visibility === "PUBLIC") {
         publicOnes.push(contest);
       }
@@ -31,7 +32,7 @@ export class ContestService {
       throw ApiError.notFound("Contest not found");
     }
 
-    return contest;
+    return this.withDerivedStatus(contest);
   }
 
   async create(input: {
@@ -43,6 +44,10 @@ export class ContestService {
     problemIds: string[];
     createdById?: string | null;
     visibility?: "PUBLIC" | "PRIVATE" | "ARCHIVED";
+    freezeStartsAt?: Date | null;
+    isRated?: boolean;
+    ratingSeason?: string | null;
+    ratingScheduledAt?: Date | null;
   }) {
     // basic time validation
     if (input.endTime <= input.startTime) {
@@ -64,14 +69,25 @@ export class ContestService {
       }
     }
 
+    if (input.freezeStartsAt && (input.freezeStartsAt <= input.startTime || input.freezeStartsAt >= input.endTime)) {
+      throw ApiError.badRequest("Leaderboard freeze must be between contest start and end time");
+    }
+
     const created = await this.repository.createContest(input);
-    return created;
+    if (created.isRated) {
+      await this.repository.createContestRatingJob({
+        contestId: created.id,
+        requestedById: input.createdById,
+        scheduledAt: input.ratingScheduledAt ?? input.endTime
+      });
+    }
+    return this.withDerivedStatus({ ...created, problems: [] });
   }
 
   async adminList() {
     // admin gets everything including private/archived
     const contests = await this.repository.listContests();
-    return contests;
+    return contests.map((contest) => this.withDerivedStatus(contest));
   }
 
   async update(
@@ -84,6 +100,10 @@ export class ContestService {
       endTime?: Date;
       status?: "UPCOMING" | "LIVE" | "ENDED";
       visibility?: "PUBLIC" | "PRIVATE" | "ARCHIVED";
+      freezeStartsAt?: Date | null;
+      isRated?: boolean;
+      ratingSeason?: string | null;
+      ratingScheduledAt?: Date | null;
     }
   ) {
     const contest = await this.get(id, true);
@@ -102,9 +122,12 @@ export class ContestService {
     if (endTime <= startTime) {
       throw ApiError.badRequest("Contest end time must be after start time");
     }
+    if (input.freezeStartsAt && (input.freezeStartsAt <= startTime || input.freezeStartsAt >= endTime)) {
+      throw ApiError.badRequest("Leaderboard freeze must be between contest start and end time");
+    }
 
     const updated = await this.repository.updateContest(id, input);
-    return updated;
+    return this.withDerivedStatus(updated);
   }
 
   async delete(id: string): Promise<void> {
@@ -130,15 +153,45 @@ export class ContestService {
   }
 
   async register(contestId: string, userId: string) {
-    // public-only — students shouldn't register for private contests via this path
+    // public-only - students shouldn't register for private contests via this path
     await this.get(contestId);
     const registration = await this.repository.registerForContest(contestId, userId);
     return registration;
   }
 
   async leaderboard(contestId: string) {
-    await this.get(contestId);
-    const rows = await this.repository.getContestLeaderboard(contestId);
+    const contest = await this.get(contestId);
+    let before: Date | undefined;
+    if (contest.freezeStartsAt && Date.now() >= contest.freezeStartsAt.getTime() && Date.now() < contest.endTime.getTime()) {
+      before = contest.freezeStartsAt;
+    }
+    const rows = await this.repository.getContestLeaderboard(contestId, before ? { before } : undefined);
     return rows;
+  }
+
+  async announcements(contestId: string) {
+    await this.get(contestId);
+    return this.repository.listContestAnnouncements(contestId);
+  }
+
+  async createAnnouncement(contestId: string, authorId: string, input: { title: string; content: string }) {
+    await this.get(contestId, true);
+    return this.repository.createContestAnnouncement({
+      contestId,
+      authorId,
+      title: input.title,
+      content: input.content
+    });
+  }
+
+  private withDerivedStatus<T extends Contest & { problems?: ContestProblem[] }>(contest: T): T {
+    const now = Date.now();
+    let status: Contest["status"] = "LIVE";
+    if (now < contest.startTime.getTime()) {
+      status = "UPCOMING";
+    } else if (now > contest.endTime.getTime()) {
+      status = "ENDED";
+    }
+    return { ...contest, status };
   }
 }

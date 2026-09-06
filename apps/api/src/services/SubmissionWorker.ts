@@ -9,6 +9,14 @@ import type { LanguageResolver, ResolvedLanguage } from "./LanguageResolver";
 import { executionProfileFromResolved } from "./SubmissionService";
 import type { CheckerRunner } from "./TestCaseGenerationService";
 
+const STOP_ON_FAILURE_STATUSES: SubmissionStatus[] = [
+  "COMPILATION_ERROR",
+  "RUNTIME_ERROR",
+  "TIME_LIMIT_EXCEEDED",
+  "MEMORY_LIMIT_EXCEEDED",
+  "INTERNAL_ERROR"
+];
+
 export class SubmissionWorker {
   constructor(
     private readonly repository: AppRepository,
@@ -137,14 +145,7 @@ export class SubmissionWorker {
           }
 
           // hard errors - no point running more cases
-          const hardErrors = [
-            "COMPILATION_ERROR",
-            "RUNTIME_ERROR",
-            "TIME_LIMIT_EXCEEDED",
-            "MEMORY_LIMIT_EXCEEDED",
-            "INTERNAL_ERROR"
-          ];
-          if (hardErrors.includes(result.status)) {
+          if (STOP_ON_FAILURE_STATUSES.includes(result.status)) {
             break;
           }
         }
@@ -166,6 +167,31 @@ export class SubmissionWorker {
       // mark problem as solved only on AC
       const isSolved = finalStatus === "ACCEPTED";
       await this.repository.upsertSolvedStatus(submission.userId, submission.problemId, isSolved);
+      if (isSolved) {
+        const dailyCompletion = await this.repository.completeDailyChallengeForProblem({
+          userId: submission.userId,
+          problemId: submission.problemId,
+          submissionId: submission.id,
+          completedAt: completedSubmission.completedAt ?? new Date()
+        });
+        if (dailyCompletion) {
+          await this.repository.awardBadge({
+            userId: submission.userId,
+            badgeKey: "daily-challenge",
+            sourceType: "DAILY_CHALLENGE",
+            sourceId: dailyCompletion.challengeId
+          });
+        }
+        const stats = await this.repository.getUserStats(submission.userId);
+        if (stats.solvedCount >= 1) {
+          await this.repository.awardBadge({
+            userId: submission.userId,
+            badgeKey: "first-solve",
+            sourceType: "SOLVED_COUNT",
+            sourceId: submission.problemId
+          });
+        }
+      }
       await this.repository.updateContestSubmissionStatus(submission.id, finalStatus);
       await this.publishStatusEvent(completedSubmission, passedTestCases, totalTestCases);
     } catch (error) {

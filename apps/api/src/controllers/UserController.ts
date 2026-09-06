@@ -30,6 +30,12 @@ export class UserController {
     sendSuccess(res, "User stats", stats);
   };
 
+  badges = async (req: Request, res: Response): Promise<void> => {
+    const username = req.params.username;
+    const badges = await this.userService.getBadges(username);
+    sendSuccess(res, "User badges", badges);
+  };
+
   adminList = async (req: Request, res: Response): Promise<void> => {
     const pagination = getPagination(req.query);
 

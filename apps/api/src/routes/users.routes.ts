@@ -23,6 +23,7 @@ export function createUsersRoutes(context: AppContext): Router {
   router.patch("/users/me", authenticate, validate(updateMeSchema), asyncHandler(users.updateMe));
   router.get("/users/:username", validate(usernameParamSchema), asyncHandler(users.byUsername));
   router.get("/users/:username/stats", validate(usernameParamSchema), asyncHandler(users.stats));
+  router.get("/users/:username/badges", validate(usernameParamSchema), asyncHandler(users.badges));
 
   router.get(
     "/admin/users",

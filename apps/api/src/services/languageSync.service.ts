@@ -1,6 +1,6 @@
 import type { LanguageService } from "./LanguageService";
 
-// thin wrapper — admin routes call this for Judge0 language sync
+// thin wrapper - admin routes call this for Judge0 language sync
 export class LanguageSyncService {
   constructor(private readonly languageService: LanguageService) {}
 

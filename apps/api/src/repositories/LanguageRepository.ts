@@ -910,7 +910,7 @@ export class PrismaLanguageRepository implements LanguageRepository {
   }
 }
 
-/** Structural Prisma row shapes — avoids `any` while accepting generated client payloads. */
+/** Structural Prisma row shapes - avoids `any` while accepting generated client payloads. */
 interface PrismaLanguageRow {
   id: string;
   key: string;

@@ -2,7 +2,7 @@ import type { NextFunction, Request, Response } from "express";
 import type { AnyZodObject } from "zod";
 import { ApiError } from "../errors/ApiError";
 
-// zod validation middleware — parses body/query/params together
+// zod validation middleware - parses body/query/params together
 export function validate(schema: AnyZodObject) {
   return (req: Request, _res: Response, next: NextFunction): void => {
     const parsed = schema.safeParse({

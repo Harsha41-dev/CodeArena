@@ -37,7 +37,7 @@ export class AuthController {
   };
 
   logout = async (req: Request, res: Response): Promise<void> => {
-    // refresh token is optional — frontend might already have cleared storage
+    // refresh token is optional - frontend might already have cleared storage
     const refreshToken = req.body.refreshToken as string | undefined;
     await this.authService.logout(refreshToken);
     sendSuccess(res, "Logged out", {});

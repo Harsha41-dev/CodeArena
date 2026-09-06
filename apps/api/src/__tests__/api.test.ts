@@ -4,7 +4,13 @@ import type { AddressInfo } from "node:net";
 import pino from "pino";
 import request from "supertest";
 import { createApp, getAppContext } from "../app";
-import { InMemorySubmissionEventBus, type SubmissionStatusEvent } from "../events/SubmissionEventBus";
+import {
+  InMemorySubmissionEventBus,
+  RedisSubmissionEventBus,
+  type RedisPublisher,
+  type RedisSubscriber,
+  type SubmissionStatusEvent
+} from "../events/SubmissionEventBus";
 import { InMemorySubmissionQueue } from "../queue/SubmissionQueue";
 import { MemoryLanguageRepository } from "../repositories/LanguageRepository";
 import { MemoryRepository } from "../repositories/MemoryRepository";
@@ -33,6 +39,40 @@ class LruGetDoesNotRefreshExecutor extends MockExecutor {
       };
     }
     return super.execute(request);
+  }
+}
+
+class FakeRedisPubSub implements RedisPublisher, RedisSubscriber {
+  private readonly channels = new Set<string>();
+  private listener: ((channel: string, message: string) => void) | null = null;
+
+  async publish(channel: string, message: string): Promise<number> {
+    if (this.channels.has(channel)) {
+      this.listener?.(channel, message);
+    }
+    return 1;
+  }
+
+  async subscribe(channel: string): Promise<number> {
+    this.channels.add(channel);
+    return this.channels.size;
+  }
+
+  async unsubscribe(channel: string): Promise<number> {
+    this.channels.delete(channel);
+    return this.channels.size;
+  }
+
+  on(_event: "message", listener: (channel: string, message: string) => void): unknown {
+    this.listener = listener;
+    return this;
+  }
+
+  off(_event: "message", listener: (channel: string, message: string) => void): unknown {
+    if (this.listener === listener) {
+      this.listener = null;
+    }
+    return this;
   }
 }
 
@@ -382,6 +422,26 @@ describe("CodeArena API", () => {
 
     const publicProblemDetail = await request(app).get("/api/v1/problems/private-problem");
     expect(publicProblemDetail.status).toBe(404);
+
+    const publicProblemList = await request(app).get("/api/v1/problems?search=private-problem");
+    expect(publicProblemList.status).toBe(200);
+    expect(publicProblemList.body.data.some((problem: { slug: string }) => problem.slug === "private-problem")).toBe(
+      false
+    );
+
+    const userAdminProblemList = await request(app)
+      .get("/api/v1/admin/problems")
+      .set("Authorization", `Bearer ${userToken}`);
+    expect(userAdminProblemList.status).toBe(403);
+
+    const adminProblemList = await request(app)
+      .get("/api/v1/admin/problems?visibility=PRIVATE&search=private-problem")
+      .set("Authorization", `Bearer ${adminToken}`);
+    expect(adminProblemList.status).toBe(200);
+    expect(adminProblemList.body.data.some((problem: { slug: string }) => problem.slug === "private-problem")).toBe(
+      true
+    );
+    expect(adminProblemList.body.data[0].visibility).toBe("PRIVATE");
 
     const customRun = await request(app)
       .post("/api/v1/run/custom")
@@ -767,6 +827,29 @@ describe("CodeArena API", () => {
     expect(JSON.stringify(events)).not.toContain("expectedOutput");
   });
 
+  it("fans out submission events through the Redis pub/sub adapter", async () => {
+    const redis = new FakeRedisPubSub();
+    const bus = new RedisSubmissionEventBus(redis, redis);
+    const events: SubmissionStatusEvent[] = [];
+    const unsubscribe = bus.subscribeToSubmission("submission-1", (event) => events.push(event));
+    const event: SubmissionStatusEvent = {
+      submissionId: "submission-1",
+      status: "ACCEPTED",
+      passedTestCases: 2,
+      totalTestCases: 2,
+      runtime: 12,
+      memory: 4096,
+      updatedAt: new Date().toISOString()
+    };
+
+    await bus.publishSubmissionStatus(event);
+    unsubscribe();
+    await bus.publishSubmissionStatus({ ...event, status: "WRONG_ANSWER" });
+    bus.close();
+
+    expect(events).toEqual([event]);
+  });
+
   it("keeps the polling detail endpoint available while live updates are unavailable", async () => {
     const { app } = makeTestApp();
     const token = await loginDemo(app);
@@ -837,6 +920,62 @@ describe("CodeArena API", () => {
     expect(leaderboard.body.data[0].solvedCount).toBeGreaterThanOrEqual(1);
   });
 
+  it("publishes persistent contest ratings after an ended contest", async () => {
+    const { app, queue } = makeTestApp();
+    const userToken = await loginDemo(app);
+    const adminToken = await loginAdmin(app);
+    const problem = await firstProblem(app);
+    const startTime = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    const endTime = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+
+    const contest = await request(app)
+      .post("/api/v1/admin/contests")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({
+        title: "Rated Round",
+        slug: "rated-round",
+        description: "Rated contest",
+        startTime,
+        endTime,
+        problemIds: [problem.id]
+      });
+    expect(contest.status).toBe(201);
+    const contestId = contest.body.data.id as string;
+
+    await request(app).post(`/api/v1/contests/${contestId}/register`).set("Authorization", `Bearer ${userToken}`);
+    await request(app).post(`/api/v1/contests/${contestId}/register`).set("Authorization", `Bearer ${adminToken}`);
+
+    const userSubmit = await request(app)
+      .post(`/api/v1/contests/${contestId}/submit`)
+      .set("Authorization", `Bearer ${userToken}`)
+      .send({ problemSlug: problem.slug, language: "PYTHON", code: "# MOCK_FIXTURE_OUTPUT" });
+    expect(userSubmit.status).toBe(201);
+
+    const adminSubmit = await request(app)
+      .post(`/api/v1/contests/${contestId}/submit`)
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({ problemSlug: problem.slug, language: "PYTHON", code: "# MOCK_FIXTURE_OUTPUT" });
+    expect(adminSubmit.status).toBe(201);
+    await queue.processPending?.();
+
+    const ended = await request(app)
+      .patch(`/api/v1/admin/contests/${contestId}`)
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({ endTime: new Date(Date.now() - 60_000).toISOString() });
+    expect(ended.status).toBe(200);
+    expect(ended.body.data.status).toBe("ENDED");
+
+    const rated = await request(app)
+      .post(`/api/v1/admin/contests/${contestId}/rate`)
+      .set("Authorization", `Bearer ${adminToken}`);
+    expect(rated.status).toBe(201);
+    expect(rated.body.data).toHaveLength(2);
+
+    const ratings = await request(app).get("/api/v1/ratings");
+    expect(ratings.status).toBe(200);
+    expect(ratings.body.data.length).toBeGreaterThanOrEqual(2);
+  });
+
   it("supports general discussion CRUD, comments, and votes", async () => {
     const { app } = makeTestApp();
     const token = await loginDemo(app);
@@ -881,6 +1020,125 @@ describe("CodeArena API", () => {
       .send({ title: "Updated DP thread" });
     expect(updated.status).toBe(200);
     expect(updated.body.data.title).toBe("Updated DP thread");
+  });
+
+  it("persists follows, notifications, solutions, reports, and admin ops data", async () => {
+    const { app, queue } = makeTestApp();
+    const userToken = await loginDemo(app);
+    const adminToken = await loginAdmin(app);
+    const problem = await firstProblem(app);
+
+    const follow = await request(app)
+      .post("/api/v1/users/admin/follow")
+      .set("Authorization", `Bearer ${userToken}`);
+    expect(follow.status).toBe(201);
+
+    const followStatus = await request(app)
+      .get("/api/v1/users/admin/follow-status")
+      .set("Authorization", `Bearer ${userToken}`);
+    expect(followStatus.status).toBe(200);
+    expect(followStatus.body.data).toEqual(expect.objectContaining({ isFollowing: true, followers: 1 }));
+
+    const adminNotifications = await request(app)
+      .get("/api/v1/notifications")
+      .set("Authorization", `Bearer ${adminToken}`);
+    expect(adminNotifications.status).toBe(200);
+    expect(adminNotifications.body.data.some((item: { type: string }) => item.type === "FOLLOW")).toBe(true);
+
+    const submit = await request(app)
+      .post("/api/v1/submit")
+      .set("Authorization", `Bearer ${userToken}`)
+      .send({ problemSlug: problem.slug, language: "PYTHON", code: "# MOCK_FIXTURE_OUTPUT" });
+    expect(submit.status).toBe(201);
+    await queue.processPending?.();
+
+    const submission = await request(app)
+      .get(`/api/v1/submissions/${submit.body.data.submissionId}`)
+      .set("Authorization", `Bearer ${userToken}`);
+    expect(submission.status).toBe(200);
+    expect(submission.body.data.status).toBe("ACCEPTED");
+
+    const shared = await request(app)
+      .post(`/api/v1/problems/${problem.slug}/solutions`)
+      .set("Authorization", `Bearer ${userToken}`)
+      .send({
+        submissionId: submit.body.data.submissionId,
+        title: "Two Sum accepted walkthrough",
+        content: "Use a complement map and scan once.",
+        visibility: "PUBLIC"
+      });
+    expect(shared.status).toBe(201);
+    const solutionId = shared.body.data.id as string;
+
+    const vote = await request(app)
+      .post(`/api/v1/solutions/${solutionId}/vote`)
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({ value: 1 });
+    expect(vote.status).toBe(200);
+
+    const solutions = await request(app).get(`/api/v1/problems/${problem.slug}/solutions`);
+    expect(solutions.status).toBe(200);
+    expect(solutions.body.data[0]).toEqual(expect.objectContaining({ id: solutionId, upvotes: 1 }));
+
+    const report = await request(app)
+      .post("/api/v1/reports")
+      .set("Authorization", `Bearer ${userToken}`)
+      .send({
+        targetType: "SOLUTION",
+        targetId: solutionId,
+        reason: "Needs moderation review",
+        details: "Test report"
+      });
+    expect(report.status).toBe(201);
+
+    const invalidReport = await request(app)
+      .post("/api/v1/reports")
+      .set("Authorization", `Bearer ${userToken}`)
+      .send({
+        targetType: "SOLUTION",
+        targetId: "missing-solution",
+        reason: "Should not enter queue"
+      });
+    expect(invalidReport.status).toBe(404);
+
+    const adminReports = await request(app)
+      .get("/api/v1/admin/reports?status=OPEN")
+      .set("Authorization", `Bearer ${adminToken}`);
+    expect(adminReports.status).toBe(200);
+    expect(adminReports.body.data.some((item: { id: string }) => item.id === report.body.data.id)).toBe(true);
+
+    const resolved = await request(app)
+      .patch(`/api/v1/admin/reports/${report.body.data.id}`)
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({ status: "RESOLVED", resolution: "Handled" });
+    expect(resolved.status).toBe(200);
+    expect(resolved.body.data.status).toBe("RESOLVED");
+
+    await new Promise((resolve) => setImmediate(resolve));
+
+    const analytics = await request(app)
+      .get("/api/v1/admin/analytics/abuse")
+      .set("Authorization", `Bearer ${adminToken}`);
+    expect(analytics.status).toBe(200);
+    expect(analytics.body.data.totalRequests).toBeGreaterThan(0);
+
+    const audit = await request(app)
+      .get("/api/v1/admin/audit-logs")
+      .set("Authorization", `Bearer ${adminToken}`);
+    expect(audit.status).toBe(200);
+    expect(audit.body.data.length).toBeGreaterThan(0);
+
+    const monitoring = await request(app)
+      .get("/api/v1/admin/monitoring/status")
+      .set("Authorization", `Bearer ${adminToken}`);
+    expect(monitoring.status).toBe(200);
+    expect(["HEALTHY", "DEGRADED", "DOWN"]).toContain(monitoring.body.data.status);
+
+    const backup = await request(app)
+      .post("/api/v1/admin/backups")
+      .set("Authorization", `Bearer ${adminToken}`);
+    expect(backup.status).toBe(201);
+    expect(["COMPLETED", "FAILED", "RUNNING"]).toContain(backup.body.data.status);
   });
 
   it("supports admin user role and status management with self-protection", async () => {
@@ -957,6 +1215,7 @@ describe("CodeArena API", () => {
   it("supports editorial draft and publish visibility", async () => {
     const { app } = makeTestApp();
     const adminToken = await loginAdmin(app);
+    const userToken = await loginDemo(app);
     const problems = await request(app).get("/api/v1/problems?limit=1");
     const problem = problems.body.data[0] as { id: string; slug: string };
 
@@ -974,8 +1233,31 @@ describe("CodeArena API", () => {
       .set("Authorization", `Bearer ${adminToken}`);
     expect(published.status).toBe(200);
 
-    const visible = await request(app).get(`/api/v1/problems/${problem.slug}/editorial`);
+    const locked = await request(app)
+      .get(`/api/v1/problems/${problem.slug}/editorial`)
+      .set("Authorization", `Bearer ${userToken}`);
+    expect(locked.body.data).toBeNull();
+
+    const attempted = await request(app)
+      .post("/api/v1/run")
+      .set("Authorization", `Bearer ${userToken}`)
+      .send({ problemSlug: problem.slug, language: "PYTHON", code: "# MOCK_FIXTURE_OUTPUT" });
+    expect(attempted.status).toBe(200);
+
+    const attemptedProblem = await request(app)
+      .get(`/api/v1/problems/${problem.slug}`)
+      .set("Authorization", `Bearer ${userToken}`);
+    expect(attemptedProblem.body.data.status).toBe("ATTEMPTED");
+
+    const visible = await request(app)
+      .get(`/api/v1/problems/${problem.slug}/editorial`)
+      .set("Authorization", `Bearer ${userToken}`);
     expect(visible.body.data.content).toBe("Draft content");
+
+    const adminVisible = await request(app)
+      .get(`/api/v1/problems/${problem.slug}/editorial`)
+      .set("Authorization", `Bearer ${adminToken}`);
+    expect(adminVisible.body.data.content).toBe("Draft content");
   });
 
   it("returns real streak stats and custom input runs", async () => {

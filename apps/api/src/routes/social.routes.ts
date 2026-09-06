@@ -8,12 +8,16 @@ import { asyncHandler } from "../utils/asyncHandler";
 import { problemSlugSchema } from "../validators/problemValidators";
 import {
   createCommentSchema,
+  createContestDiscussionSchema,
   createDiscussionSchema,
   createGeneralDiscussionSchema,
+  acceptAnswerSchema,
   discussionIdSchema,
   editorialBySlugSchema,
   editorialIdSchema,
+  listContestDiscussionsSchema,
   listGeneralDiscussionsSchema,
+  listProblemDiscussionsSchema,
   noteBySlugSchema,
   updateCommentSchema,
   updateDiscussionSchema,
@@ -34,12 +38,23 @@ export function createSocialRoutes(context: AppContext): Router {
     validate(editorialBySlugSchema),
     asyncHandler(social.editorial)
   );
-  router.get("/problems/:slug/discussions", validate(problemSlugSchema), asyncHandler(social.discussions));
+  router.get("/problems/:slug/discussions", validate(listProblemDiscussionsSchema), asyncHandler(social.discussions));
   router.post(
     "/problems/:slug/discussions",
     authenticate,
     validate(createDiscussionSchema),
     asyncHandler(social.createDiscussion)
+  );
+  router.get(
+    "/contests/:id/discussions",
+    validate(listContestDiscussionsSchema),
+    asyncHandler(social.contestDiscussions)
+  );
+  router.post(
+    "/contests/:id/discussions",
+    authenticate,
+    validate(createContestDiscussionSchema),
+    asyncHandler(social.createContestDiscussion)
   );
 
   router.get("/discussions", validate(listGeneralDiscussionsSchema), asyncHandler(social.listGeneralDiscussions));
@@ -49,7 +64,7 @@ export function createSocialRoutes(context: AppContext): Router {
     validate(createGeneralDiscussionSchema),
     asyncHandler(social.createGeneralDiscussion)
   );
-  router.get("/discussions/:id", validate(discussionIdSchema), asyncHandler(social.getDiscussion));
+  router.get("/discussions/:id", optionalAuthenticate, validate(discussionIdSchema), asyncHandler(social.getDiscussion));
   router.post(
     "/discussions/:id/comments",
     authenticate,
@@ -80,6 +95,24 @@ export function createSocialRoutes(context: AppContext): Router {
     authenticate,
     validate(voteDiscussionSchema),
     asyncHandler(social.voteDiscussion)
+  );
+  router.patch(
+    "/discussions/:id/accepted-answer",
+    authenticate,
+    validate(acceptAnswerSchema),
+    asyncHandler(social.acceptAnswer)
+  );
+  router.post(
+    "/discussion-comments/:id/helpful",
+    authenticate,
+    validate(discussionIdSchema),
+    asyncHandler(social.markCommentHelpful)
+  );
+  router.delete(
+    "/discussion-comments/:id/helpful",
+    authenticate,
+    validate(discussionIdSchema),
+    asyncHandler(social.unmarkCommentHelpful)
   );
 
   router.post(

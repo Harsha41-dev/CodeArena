@@ -1,7 +1,10 @@
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { Link } from "react-router-dom";
+import { Shuffle } from "lucide-react";
 import { contestsApi } from "../services/api";
 import type { Contest } from "../types/api";
+import { Button } from "../components/Button";
 import { ContestCard } from "../components/ContestCard";
 import { EmptyState, ErrorState, LoadingState } from "../components/State";
 
@@ -42,9 +45,17 @@ export function ContestsPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white">Contests</h1>
-        <p className="mt-1 text-base text-slate-500">Live rounds, upcoming contests, and past standings.</p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white">Contests</h1>
+          <p className="mt-1 text-base text-slate-500">Live rounds, upcoming contests, and past standings.</p>
+        </div>
+        <Link to="/virtual-contest">
+          <Button variant="secondary">
+            <Shuffle className="h-4 w-4" />
+            Virtual Contest
+          </Button>
+        </Link>
       </div>
       <ContestSection title="Live Contests" contests={grouped.live} empty="No live contests right now." />
       <ContestSection title="Upcoming Contests" contests={grouped.upcoming} empty="No upcoming contests scheduled." />

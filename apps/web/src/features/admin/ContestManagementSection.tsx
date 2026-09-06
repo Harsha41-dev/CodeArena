@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Send, Trophy } from "lucide-react";
+import { Megaphone, Send, Trophy } from "lucide-react";
 import { adminApi } from "../../services/api";
 import type { Contest } from "../../types/api";
 import { Button } from "../../components/Button";
@@ -18,9 +18,14 @@ export function ContestManagementSection({ onToast }: ContestManagementSectionPr
     description: "",
     startTime: "",
     endTime: "",
+    freezeStartsAt: "",
+    isRated: true,
+    ratingSeason: "",
+    ratingScheduledAt: "",
     problemIds: ""
   });
   const [contestProblemInputs, setContestProblemInputs] = useState<Record<string, string>>({});
+  const [announcementInputs, setAnnouncementInputs] = useState<Record<string, { title: string; content: string }>>({});
 
   const contests = useQuery({
     queryKey: ["admin-contests"],
@@ -37,6 +42,9 @@ export function ContestManagementSection({ onToast }: ContestManagementSectionPr
         ...contestForm,
         startTime: new Date(contestForm.startTime).toISOString(),
         endTime: new Date(contestForm.endTime).toISOString(),
+        freezeStartsAt: contestForm.freezeStartsAt ? new Date(contestForm.freezeStartsAt).toISOString() : null,
+        ratingSeason: contestForm.ratingSeason.trim() || null,
+        ratingScheduledAt: contestForm.ratingScheduledAt ? new Date(contestForm.ratingScheduledAt).toISOString() : null,
         problemIds,
         visibility: "PUBLIC"
       });
@@ -48,7 +56,13 @@ export function ContestManagementSection({ onToast }: ContestManagementSectionPr
   });
 
   const updateContest = useMutation({
-    mutationFn: ({ id, payload }: { id: string; payload: Partial<Pick<Contest, "status" | "visibility">> }) =>
+    mutationFn: ({
+      id,
+      payload
+    }: {
+      id: string;
+      payload: Partial<Pick<Contest, "status" | "visibility" | "freezeStartsAt" | "isRated" | "ratingSeason" | "ratingScheduledAt">>;
+    }) =>
       adminApi.updateContest(id, payload),
     onSuccess: () => {
       onToast("Contest updated");
@@ -83,6 +97,15 @@ export function ContestManagementSection({ onToast }: ContestManagementSectionPr
     }
   });
 
+  const createAnnouncement = useMutation({
+    mutationFn: ({ contestId, title, content }: { contestId: string; title: string; content: string }) =>
+      adminApi.createContestAnnouncement(contestId, { title, content }),
+    onSuccess: (_, variables) => {
+      onToast("Announcement posted");
+      setAnnouncementInputs((current) => ({ ...current, [variables.contestId]: { title: "", content: "" } }));
+    }
+  });
+
   return (
     <div className="ca-panel p-5">
       <PanelTitle icon={Trophy} title="Create Contest" />
@@ -114,6 +137,31 @@ export function ContestManagementSection({ onToast }: ContestManagementSectionPr
             onChange={(value) => setContestForm((current) => ({ ...current, endTime: value }))}
           />
         </div>
+        <div className="grid gap-3 md:grid-cols-3">
+          <TextInput
+            label="Freeze starts"
+            value={contestForm.freezeStartsAt}
+            onChange={(value) => setContestForm((current) => ({ ...current, freezeStartsAt: value }))}
+          />
+          <TextInput
+            label="Rating season"
+            value={contestForm.ratingSeason}
+            onChange={(value) => setContestForm((current) => ({ ...current, ratingSeason: value }))}
+          />
+          <TextInput
+            label="Rating schedule"
+            value={contestForm.ratingScheduledAt}
+            onChange={(value) => setContestForm((current) => ({ ...current, ratingScheduledAt: value }))}
+          />
+        </div>
+        <label className="flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={contestForm.isRated}
+            onChange={(event) => setContestForm((current) => ({ ...current, isRated: event.target.checked }))}
+          />
+          <span>Rated contest</span>
+        </label>
         <TextInput
           label="Problem IDs"
           value={contestForm.problemIds}
@@ -133,6 +181,11 @@ export function ContestManagementSection({ onToast }: ContestManagementSectionPr
                 <p className="text-xs text-slate-500">
                   {contest.slug} - {new Date(contest.startTime).toLocaleString()} to{" "}
                   {new Date(contest.endTime).toLocaleString()}
+                </p>
+                <p className="mt-1 text-xs text-slate-500">
+                  {contest.isRated ? "Rated" : "Unrated"}
+                  {contest.freezeStartsAt ? ` - freeze ${new Date(contest.freezeStartsAt).toLocaleString()}` : ""}
+                  {contest.ratingScheduledAt ? ` - ratings ${new Date(contest.ratingScheduledAt).toLocaleString()}` : ""}
                 </p>
               </div>
               <Button
@@ -176,6 +229,54 @@ export function ContestManagementSection({ onToast }: ContestManagementSectionPr
                 <option value="PRIVATE">PRIVATE</option>
                 <option value="ARCHIVED">ARCHIVED</option>
               </select>
+            </div>
+            <div className="mt-3 grid gap-2 md:grid-cols-4">
+              <input
+                className="ca-input"
+                placeholder="Freeze ISO/date"
+                defaultValue={contest.freezeStartsAt ?? ""}
+                onBlur={(event) =>
+                  updateContest.mutate({
+                    id: contest.id,
+                    payload: { freezeStartsAt: event.target.value || null }
+                  })
+                }
+              />
+              <input
+                className="ca-input"
+                placeholder="Season"
+                defaultValue={contest.ratingSeason ?? ""}
+                onBlur={(event) =>
+                  updateContest.mutate({
+                    id: contest.id,
+                    payload: { ratingSeason: event.target.value || null }
+                  })
+                }
+              />
+              <input
+                className="ca-input"
+                placeholder="Rating schedule"
+                defaultValue={contest.ratingScheduledAt ?? ""}
+                onBlur={(event) =>
+                  updateContest.mutate({
+                    id: contest.id,
+                    payload: { ratingScheduledAt: event.target.value || null }
+                  })
+                }
+              />
+              <label className="flex items-center gap-2 rounded-md bg-white px-3 py-2 dark:bg-slate-900">
+                <input
+                  type="checkbox"
+                  checked={Boolean(contest.isRated)}
+                  onChange={(event) =>
+                    updateContest.mutate({
+                      id: contest.id,
+                      payload: { isRated: event.target.checked }
+                    })
+                  }
+                />
+                <span className="text-sm">Rated</span>
+              </label>
             </div>
             <div className="mt-3 flex flex-wrap gap-2">
               <input
@@ -221,6 +322,59 @@ export function ContestManagementSection({ onToast }: ContestManagementSectionPr
                 </button>
               ))}
               {!contest.problems.length ? <span className="text-xs text-slate-500">No problems assigned.</span> : null}
+            </div>
+            <div className="mt-4 rounded-md bg-white p-3 dark:bg-slate-900">
+              <div className="flex items-center gap-2 text-sm font-semibold">
+                <Megaphone className="h-4 w-4 text-accent-600" />
+                Announcement
+              </div>
+              <div className="mt-3 grid gap-2 md:grid-cols-[0.7fr_1fr_auto]">
+                <input
+                  className="ca-input"
+                  placeholder="Title"
+                  value={announcementInputs[contest.id]?.title ?? ""}
+                  onChange={(event) =>
+                    setAnnouncementInputs((current) => ({
+                      ...current,
+                      [contest.id]: {
+                        title: event.target.value,
+                        content: current[contest.id]?.content ?? ""
+                      }
+                    }))
+                  }
+                />
+                <input
+                  className="ca-input"
+                  placeholder="Content"
+                  value={announcementInputs[contest.id]?.content ?? ""}
+                  onChange={(event) =>
+                    setAnnouncementInputs((current) => ({
+                      ...current,
+                      [contest.id]: {
+                        title: current[contest.id]?.title ?? "",
+                        content: event.target.value
+                      }
+                    }))
+                  }
+                />
+                <Button
+                  variant="secondary"
+                  disabled={
+                    createAnnouncement.isPending ||
+                    !announcementInputs[contest.id]?.title.trim() ||
+                    !announcementInputs[contest.id]?.content.trim()
+                  }
+                  onClick={() =>
+                    createAnnouncement.mutate({
+                      contestId: contest.id,
+                      title: announcementInputs[contest.id]?.title.trim() ?? "",
+                      content: announcementInputs[contest.id]?.content.trim() ?? ""
+                    })
+                  }
+                >
+                  Post
+                </Button>
+              </div>
             </div>
           </div>
         ))}

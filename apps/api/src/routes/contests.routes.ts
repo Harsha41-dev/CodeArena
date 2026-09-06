@@ -9,6 +9,7 @@ import { asyncHandler } from "../utils/asyncHandler";
 import {
   addContestProblemSchema,
   contestIdSchema,
+  createContestAnnouncementSchema,
   createContestSchema,
   removeContestProblemSchema,
   updateContestSchema
@@ -30,6 +31,7 @@ export function createContestsRoutes(context: AppContext): Router {
   );
   router.post("/contests/:id/register", authenticate, validate(contestIdSchema), asyncHandler(contests.register));
   router.get("/contests/:id/leaderboard", validate(contestIdSchema), asyncHandler(contests.leaderboard));
+  router.get("/contests/:id/announcements", validate(contestIdSchema), asyncHandler(contests.announcements));
   router.post(
     "/contests/:id/submit",
     codeExecutionRateLimit,
@@ -80,6 +82,13 @@ export function createContestsRoutes(context: AppContext): Router {
     requireRole("ADMIN"),
     validate(removeContestProblemSchema),
     asyncHandler(contests.removeProblem)
+  );
+  router.post(
+    "/admin/contests/:id/announcements",
+    authenticate,
+    requireRole("ADMIN"),
+    validate(createContestAnnouncementSchema),
+    asyncHandler(contests.createAnnouncement)
   );
 
   return router;

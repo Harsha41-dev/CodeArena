@@ -18,18 +18,38 @@ code editor, submissions, queues, workers, test cases, contests, and verdicts.
 
 - User register, login, refresh token, and logout
 - Problem list with filters, tags, difficulty, and status
-- Problem workspace with statement, Monaco editor, sample run, custom input, and submit
+- Problem stats with acceptance rate, solved count, submission count, and richer sorting
+- Daily challenge, curated practice sets, and next-problem recommendation
+- Study plans with ordered problems, daily unlock metadata, badges, and revision queue
+- Problem workspace with statement, resizable panels, Monaco editor, sample run, custom input, and submit
+- Editor settings for theme, font size, tab size, word wrap, minimap, reset code, and visible autosave
+- Workspace tabs for description, editorial, submissions, solutions, discussions, and notes
+- Editorials unlock after a logged-in user attempts the problem, while admins can still preview drafts
+- Active sample test-case runs from the workspace
 - Queued submissions with `PENDING`, `RUNNING`, and final verdict states
 - Live submission status using Server-Sent Events, with polling fallback
+- Redis pub/sub-backed live submission events when `REDIS_URL` is configured
+- Submission history filters for problem, verdict, language, and date range
+- Submission detail comparison with a previous attempt and approximate runtime/memory percentile
+- Accepted submission sharing into persisted problem solution posts with visibility controls and voting
 - Multiple language support from database catalog
 - Judge0 language sync support
 - Admin problem creation with sample and hidden test cases
+- Admin problem catalog includes public, private draft, and archived states
 - Custom checkers for problems where exact output matching is not enough
 - Test-case generation using generator and reference solution scripts
-- Contests, contest registration, and leaderboard
+- Contests, contest registration, upsolve behavior, leaderboard, and clarification threads
+- Contest submissions are accepted only during the live contest window
+- Virtual contest and mock interview practice pages with topic/company filters and local reports
 - Global leaderboard and problem leaderboard
-- Discussions, comments, votes, bookmarks, notes, and editorials
-- Admin user, language, contest, and monitoring pages
+- Public/profile pages, badges, country/global rank signals, rating history, topic strength views, linked submission calendar, activity feed, and persistent follow state
+- Persistent notifications for follows, solution votes, and report updates
+- Discussions, comments, votes, markdown rendering, sorting, report flow, bookmarks, notes, and editorials
+- Admin user, language, contest, problem preview, testcase validation, and monitoring pages
+- Admin launch analytics for sampled submissions, accepted rate, judge errors, API abuse/rate patterns, and suspicious actors
+- Admin moderation/report queues, audit logs, backup runs, production health snapshots, and contest rating publishing
+- Configurable API telemetry retention for abuse analytics
+- Admin rejudge controls for one submission or filtered error batches
 - Swagger API docs at `/api-docs`
 - Docker compose setup for local services
 
@@ -165,6 +185,7 @@ npm run typecheck
 npm test
 npm run build
 npm run db:migrate
+npm run db:migrate:deploy
 npm run db:seed
 npm run judge0:health
 npm run languages:sync:judge0
@@ -197,7 +218,8 @@ npm test
 ```
 
 Current test coverage includes auth, problem APIs, submissions, queue/worker flow, contests,
-leaderboards, discussions, language selection, Judge0 mapping, custom checkers, and test-case generation.
+leaderboards, discussions, language selection, Judge0 mapping, custom checkers, test-case generation,
+solution sharing, follows, notifications, reports, audit logs, monitoring, backups, and ratings.
 
 ## Docs
 
@@ -215,14 +237,18 @@ leaderboards, discussions, language selection, Judge0 mapping, custom checkers, 
 | [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)                       | Deployment checklist and production notes         |
 | [docs/TESTING.md](docs/TESTING.md)                             | Test strategy                                     |
 | [docs/FRONTEND_ARCHITECTURE.md](docs/FRONTEND_ARCHITECTURE.md) | Frontend pages and component structure            |
+| [docs/FEATURE_ROADMAP.md](docs/FEATURE_ROADMAP.md)             | Live-launch feature roadmap                       |
 | [docs/LEARNINGS.md](docs/LEARNINGS.md)                         | Things I learned while building this              |
 
 ## Current Limitations
 
 - No plagiarism detection yet
 - Multi-file submissions are not supported
+- Virtual contest history and mock interview reports are browser-local until backed by database models
+- Helpful comment markers are browser-local until backed by moderation/community tables
+- Frozen contest standings are still roadmap items
 - Docker compose does not auto-run migrations
-- Multi-instance live events need Redis pub/sub instead of the current in-memory event bus
+- Local/test live events use the in-memory event bus; deployed Redis mode should run API and worker with the same `REDIS_URL`
 - Some large frontend pages can still be split further
 - Screenshots and hosted demo are still pending
 

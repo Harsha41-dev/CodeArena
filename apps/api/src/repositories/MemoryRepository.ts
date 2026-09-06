@@ -3,25 +3,53 @@ import { v4 as uuid } from "uuid";
 import { problemFixtures } from "../constants/problemFixtures";
 import { ApiError } from "../errors/ApiError";
 import type {
+  AdminAuditLog,
+  ApiUsageEvent,
+  BadgeDefinition,
+  BackupRun,
   Bookmark,
+  Company,
   Contest,
+  ContestAnnouncement,
   ContestProblem,
+  ContestRatingJob,
   ContestRegistration,
   ContestSubmission,
+  DailyChallenge,
+  DailyChallengeCompletion,
+  Difficulty,
   Discussion,
+  DiscussionAcceptedAnswer,
   DiscussionComment,
+  DiscussionHelpfulVote,
   DiscussionVote,
   Editorial,
+  EditorialOfficialSolution,
+  EditorialSection,
   GeneratedTestCaseBatch,
+  HealthCheckSnapshot,
+  LearningCollection,
+  LearningCollectionItem,
+  LearningCollectionProgress,
+  MonitoringAlert,
   Note,
+  Notification,
+  PracticeSession,
+  PracticeSessionProblem,
   Problem,
+  ProblemCompany,
+  ProblemCompanyTag,
   ProblemAsset,
   ProblemAssetType,
   ProblemList,
   ProblemListItem,
   ProblemSolvedStatus,
   ProblemStatus,
+  RatingEvent,
+  Report,
   RefreshTokenRecord,
+  Solution,
+  SolutionVote,
   Submission,
   SubmissionStatus,
   SubmissionTestCaseResult,
@@ -29,29 +57,66 @@ import type {
   TestCase,
   TestCaseGenerationJob,
   User,
-  UserRankSnapshot
+  UserFollow,
+  UserRankSnapshot,
+  UserRating
 } from "../types/domain";
 import type {
   AppRepository,
   ContestLeaderboardRow,
+  CreateApiUsageEventInput,
+  CreateAuditLogInput,
+  CreateBackupRunInput,
+  CreateHealthCheckSnapshotInput,
+  CreateNotificationInput,
+  CreateLearningCollectionInput,
+  CreatePracticeSessionInput,
   CreateProblemInput,
+  CreateRatingEventInput,
+  CreateReportInput,
+  CreateSolutionInput,
   CreateSubmissionInput,
   CreateSubmissionResultInput,
   CreateTestCaseInput,
   CreateUserInput,
+  DailyChallengeWithProblem,
+  DiscussionSort,
+  EditorialStructureInput,
   CreateGeneratedTestCaseBatchInput,
   CreateProblemAssetInput,
   CreateTestCaseGenerationJobInput,
   LeaderboardRow,
+  LearningCollectionItemInput,
+  LearningCollectionWithItems,
+  ListApiUsageEventsInput,
+  ListAuditLogsInput,
+  ListBackupRunsInput,
+  ListHealthCheckSnapshotsInput,
+  ListNotificationsInput,
+  ListRatingEventsInput,
+  ListReportsInput,
+  ListSolutionsInput,
   ListUsersInput,
   ListSubmissionsInput,
   ProblemFilters,
+  ProblemCompanyInput,
   ProblemLeaderboardRow,
+  PracticeSessionWithProblems,
+  SolutionWithRelations,
+  UpdatePracticeSessionInput,
+  UpdatePracticeSessionProblemInput,
+  UpdateBackupRunInput,
+  UpdateLearningCollectionInput,
+  UpdateReportInput,
+  UpdateSolutionInput,
   UpdateProblemInput,
   UpdateTestCaseInput,
   UpdateProblemAssetInput,
   UpdateTestCaseGenerationJobInput,
+  UpsertUserRatingInput,
+  UpsertDailyChallengeInput,
   UpdateUserInput,
+  UserBadgeWithDefinition,
   UserStats
 } from "./AppRepository";
 
@@ -60,6 +125,8 @@ export class MemoryRepository implements AppRepository {
   private users: User[] = [];
   private refreshTokens: RefreshTokenRecord[] = [];
   private tags: Tag[] = [];
+  private companies: Company[] = [];
+  private problemCompanies: ProblemCompany[] = [];
   private problems: Problem[] = [];
   private testCases: TestCase[] = [];
   private submissions: Submission[] = [];
@@ -73,14 +140,41 @@ export class MemoryRepository implements AppRepository {
   private discussions: Discussion[] = [];
   private comments: DiscussionComment[] = [];
   private discussionVotes: DiscussionVote[] = [];
+  private discussionHelpfulVotes: DiscussionHelpfulVote[] = [];
+  private discussionAcceptedAnswers: DiscussionAcceptedAnswer[] = [];
   private bookmarks: Bookmark[] = [];
   private problemLists: ProblemList[] = [];
   private problemListItems: ProblemListItem[] = [];
+  private learningCollections: LearningCollection[] = [];
+  private learningCollectionItems: LearningCollectionItem[] = [];
+  private learningProgress: LearningCollectionProgress[] = [];
+  private dailyChallenges: DailyChallenge[] = [];
+  private dailyChallengeCompletions: DailyChallengeCompletion[] = [];
+  private badgeDefinitions: BadgeDefinition[] = [];
+  private userBadges: UserBadgeWithDefinition[] = [];
   private notes: Note[] = [];
+  private editorialSections: EditorialSection[] = [];
+  private editorialOfficialSolutions: EditorialOfficialSolution[] = [];
   private rankSnapshots: UserRankSnapshot[] = [];
   private problemAssets: ProblemAsset[] = [];
   private testCaseGenerationJobs: TestCaseGenerationJob[] = [];
   private generatedTestCaseBatches: GeneratedTestCaseBatch[] = [];
+  private solutions: Solution[] = [];
+  private solutionVotes: SolutionVote[] = [];
+  private reports: Report[] = [];
+  private follows: UserFollow[] = [];
+  private notifications: Notification[] = [];
+  private auditLogs: AdminAuditLog[] = [];
+  private apiUsageEvents: ApiUsageEvent[] = [];
+  private backupRuns: BackupRun[] = [];
+  private healthSnapshots: HealthCheckSnapshot[] = [];
+  private userRatings: UserRating[] = [];
+  private ratingEvents: RatingEvent[] = [];
+  private practiceSessions: PracticeSession[] = [];
+  private practiceSessionProblems: PracticeSessionProblem[] = [];
+  private contestAnnouncements: ContestAnnouncement[] = [];
+  private contestRatingJobs: ContestRatingJob[] = [];
+  private monitoringAlerts: MonitoringAlert[] = [];
 
   constructor(seed = true) {
     // seed demo problems/users so the app is usable without prisma
@@ -206,7 +300,7 @@ export class MemoryRepository implements AppRepository {
     // newest first
     items = [...items].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
 
-    // no pagination args → return full array (used by some admin helpers)
+    // no pagination args - return full array (used by some admin helpers)
     if (!input) {
       return items;
     }
@@ -254,6 +348,7 @@ export class MemoryRepository implements AppRepository {
   async listProblems(filters: ProblemFilters) {
     const page = filters.page;
     const limit = filters.limit;
+    const tagFilter = filters.tag ?? filters.topic;
     const statusByProblem = new Map<string, ProblemStatus>();
 
     // if we know the user, attach solved/attempted status
@@ -273,11 +368,15 @@ export class MemoryRepository implements AppRepository {
       }
     }
 
-    // only public problems on the list endpoint
+    // normal lists only expose public problems; admin lists can opt into every visibility state
     let items: Problem[] = [];
     for (let i = 0; i < this.problems.length; i++) {
-      if (this.problems[i].visibility === "PUBLIC") {
-        items.push(this.problems[i]);
+      const problem = this.problems[i];
+      const matchesVisibility = filters.includeNonPublic
+        ? !filters.visibility || problem.visibility === filters.visibility
+        : problem.visibility === "PUBLIC";
+      if (matchesVisibility) {
+        items.push(problem);
       }
     }
 
@@ -292,8 +391,7 @@ export class MemoryRepository implements AppRepository {
       items = filtered;
     }
 
-    if (filters.tag) {
-      const tagFilter = filters.tag;
+    if (tagFilter) {
       const filtered: Problem[] = [];
       for (let i = 0; i < items.length; i++) {
         const problem = items[i];
@@ -306,6 +404,25 @@ export class MemoryRepository implements AppRepository {
           }
         }
         if (hasTag) {
+          filtered.push(problem);
+        }
+      }
+      items = filtered;
+    }
+
+    if (filters.company) {
+      const companyNeedle = filters.company.toLowerCase();
+      const filtered: Problem[] = [];
+      for (let i = 0; i < items.length; i++) {
+        const problem = items[i];
+        const companies = this.problemCompaniesFor(problem.id);
+        const hasCompany = companies.some(
+          (item) => item.company.slug === companyNeedle || item.company.name.toLowerCase() === companyNeedle
+        );
+        const hasLegacyTag = problem.tags.some(
+          (tag) => tag.slug === companyNeedle || tag.name.toLowerCase() === companyNeedle
+        );
+        if (hasCompany || hasLegacyTag) {
           filtered.push(problem);
         }
       }
@@ -331,7 +448,9 @@ export class MemoryRepository implements AppRepository {
       const status = statusByProblem.get(problem.id) ?? "NOT_ATTEMPTED";
       enriched.push({
         ...problem,
-        status
+        companies: this.problemCompaniesFor(problem.id),
+        status,
+        ...this.problemStats(problem.id)
       });
     }
 
@@ -345,21 +464,24 @@ export class MemoryRepository implements AppRepository {
       }
     }
 
+    const sorted = this.sortProblems(statusFiltered, filters.sort ?? "newest");
     const start = (page - 1) * limit;
     return {
-      items: statusFiltered.slice(start, start + limit),
-      total: statusFiltered.length,
+      items: sorted.slice(start, start + limit),
+      total: sorted.length,
       page,
       limit
     };
   }
 
   async findProblemBySlug(slug: string): Promise<Problem | null> {
-    return this.problems.find((problem) => problem.slug === slug) ?? null;
+    const problem = this.problems.find((item) => item.slug === slug) ?? null;
+    return problem ? { ...problem, companies: this.problemCompaniesFor(problem.id) } : null;
   }
 
   async findProblemById(id: string): Promise<Problem | null> {
-    return this.problems.find((problem) => problem.id === id) ?? null;
+    const problem = this.problems.find((item) => item.id === id) ?? null;
+    return problem ? { ...problem, companies: this.problemCompaniesFor(problem.id) } : null;
   }
 
   async createProblem(input: CreateProblemInput): Promise<Problem> {
@@ -389,14 +511,21 @@ export class MemoryRepository implements AppRepository {
       tags
     };
     this.problems.push(problem);
-    return problem;
+    if (input.companies) {
+      await this.setProblemCompanies(problem.id, input.companies);
+    }
+    return { ...problem, companies: this.problemCompaniesFor(problem.id) };
   }
 
   async updateProblem(id: string, input: UpdateProblemInput): Promise<Problem> {
     const problem = this.requireProblem(id);
     const updatedTags = input.tags ? this.ensureTags(input.tags) : problem.tags;
-    Object.assign(problem, input, { tags: updatedTags, updatedAt: new Date() });
-    return problem;
+    const { companies, ...patch } = input;
+    Object.assign(problem, patch, { tags: updatedTags, updatedAt: new Date() });
+    if (companies) {
+      await this.setProblemCompanies(id, companies);
+    }
+    return { ...problem, companies: this.problemCompaniesFor(problem.id) };
   }
 
   async archiveProblem(id: string): Promise<void> {
@@ -407,6 +536,330 @@ export class MemoryRepository implements AppRepository {
 
   async listTags(): Promise<Tag[]> {
     return [...this.tags].sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  async listCompanies(): Promise<Company[]> {
+    return [...this.companies].sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  async setProblemCompanies(problemId: string, companies: ProblemCompanyInput[]): Promise<ProblemCompanyTag[]> {
+    this.requireProblem(problemId);
+    this.problemCompanies = this.problemCompanies.filter((item) => item.problemId !== problemId);
+    for (let index = 0; index < companies.length; index += 1) {
+      const input = companies[index];
+      const company = this.ensureCompany(input);
+      this.problemCompanies.push({
+        id: uuid(),
+        problemId,
+        companyId: company.id,
+        frequency: input.frequency ?? 0,
+        isFeatured: input.isFeatured ?? false,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      });
+    }
+    return this.problemCompaniesFor(problemId);
+  }
+
+  async listLearningCollections(input: {
+    type: LearningCollection["type"];
+    page: number;
+    limit: number;
+    includeNonPublic?: boolean;
+    userId?: string;
+  }): Promise<{ items: LearningCollectionWithItems[]; total: number; page: number; limit: number }> {
+    let items = this.learningCollections.filter((collection) => collection.type === input.type);
+    if (!input.includeNonPublic) {
+      items = items.filter((collection) => collection.visibility === "PUBLIC");
+    }
+    items = items.sort((a, b) => a.title.localeCompare(b.title));
+    const start = (input.page - 1) * input.limit;
+    const pageItems = items.slice(start, start + input.limit).map((collection) =>
+      this.withLearningItems(collection, input.userId)
+    );
+    return { items: pageItems, total: items.length, page: input.page, limit: input.limit };
+  }
+
+  async findLearningCollectionBySlug(input: {
+    type: LearningCollection["type"];
+    slug: string;
+    includeNonPublic?: boolean;
+    userId?: string;
+  }): Promise<LearningCollectionWithItems | null> {
+    const collection =
+      this.learningCollections.find((item) => item.type === input.type && item.slug === input.slug) ?? null;
+    if (!collection) return null;
+    if (!input.includeNonPublic && collection.visibility !== "PUBLIC") return null;
+    return this.withLearningItems(collection, input.userId);
+  }
+
+  async createLearningCollection(input: CreateLearningCollectionInput): Promise<LearningCollection> {
+    if (this.learningCollections.some((item) => item.type === input.type && item.slug === input.slug)) {
+      throw ApiError.conflict("Collection slug already exists for this type");
+    }
+    const now = new Date();
+    const collection: LearningCollection = {
+      id: uuid(),
+      type: input.type,
+      slug: input.slug,
+      title: input.title,
+      description: input.description,
+      badge: input.badge ?? null,
+      dailyUnlockCount: input.dailyUnlockCount ?? 0,
+      visibility: input.visibility ?? "PUBLIC",
+      createdById: input.createdById ?? null,
+      createdAt: now,
+      updatedAt: now
+    };
+    this.learningCollections.push(collection);
+    return collection;
+  }
+
+  async updateLearningCollection(id: string, input: UpdateLearningCollectionInput): Promise<LearningCollection> {
+    const collection = this.requireLearningCollection(id);
+    Object.assign(collection, input, { updatedAt: new Date() });
+    return collection;
+  }
+
+  async deleteLearningCollection(id: string): Promise<void> {
+    this.requireLearningCollection(id);
+    this.learningCollections = this.learningCollections.filter((item) => item.id !== id);
+    this.learningCollectionItems = this.learningCollectionItems.filter((item) => item.collectionId !== id);
+    this.learningProgress = this.learningProgress.filter((item) => item.collectionId !== id);
+  }
+
+  async setLearningCollectionItems(
+    collectionId: string,
+    items: LearningCollectionItemInput[]
+  ): Promise<LearningCollectionItem[]> {
+    this.requireLearningCollection(collectionId);
+    this.learningCollectionItems = this.learningCollectionItems.filter((item) => item.collectionId !== collectionId);
+    const created: LearningCollectionItem[] = [];
+    for (let index = 0; index < items.length; index += 1) {
+      const item = items[index];
+      this.requireProblem(item.problemId);
+      created.push({
+        id: uuid(),
+        collectionId,
+        problemId: item.problemId,
+        order: item.order ?? index,
+        note: item.note ?? null,
+        createdAt: new Date()
+      });
+    }
+    this.learningCollectionItems.push(...created);
+    return created.sort((a, b) => a.order - b.order);
+  }
+
+  async upsertLearningProgress(input: {
+    collectionId: string;
+    userId: string;
+    unlockedCount: number;
+    completedCount: number;
+    completedAt?: Date | null;
+  }): Promise<LearningCollectionProgress> {
+    this.requireLearningCollection(input.collectionId);
+    this.requireUser(input.userId);
+    const now = new Date();
+    let progress = this.learningProgress.find(
+      (item) => item.collectionId === input.collectionId && item.userId === input.userId
+    );
+    if (!progress) {
+      progress = {
+        id: uuid(),
+        collectionId: input.collectionId,
+        userId: input.userId,
+        startedAt: now,
+        lastViewedAt: now,
+        unlockedCount: input.unlockedCount,
+        completedCount: input.completedCount,
+        completedAt: input.completedAt ?? null
+      };
+      this.learningProgress.push(progress);
+      return progress;
+    }
+    progress.lastViewedAt = now;
+    progress.unlockedCount = input.unlockedCount;
+    progress.completedCount = input.completedCount;
+    progress.completedAt = input.completedAt ?? progress.completedAt ?? null;
+    return progress;
+  }
+
+  async findDailyChallengeByDate(date: Date, userId?: string): Promise<DailyChallengeWithProblem | null> {
+    const key = this.dayKey(date);
+    const challenge = this.dailyChallenges.find((item) => this.dayKey(item.date) === key) ?? null;
+    if (!challenge) return null;
+    const completion = userId
+      ? this.dailyChallengeCompletions.find((item) => item.challengeId === challenge.id && item.userId === userId) ?? null
+      : null;
+    return {
+      ...challenge,
+      problem: (await this.findProblemById(challenge.problemId)) ?? undefined,
+      completion
+    };
+  }
+
+  async upsertDailyChallenge(input: UpsertDailyChallengeInput): Promise<DailyChallenge> {
+    this.requireProblem(input.problemId);
+    const key = this.dayKey(input.date);
+    const existing = this.dailyChallenges.find((item) => this.dayKey(item.date) === key);
+    if (existing) {
+      existing.problemId = input.problemId;
+      existing.assignedById = input.assignedById ?? existing.assignedById ?? null;
+      existing.rewardXp = input.rewardXp ?? existing.rewardXp;
+      existing.updatedAt = new Date();
+      return existing;
+    }
+    const now = new Date();
+    const challenge: DailyChallenge = {
+      id: uuid(),
+      date: new Date(`${key}T00:00:00.000Z`),
+      problemId: input.problemId,
+      assignedById: input.assignedById ?? null,
+      rewardXp: input.rewardXp ?? 10,
+      createdAt: now,
+      updatedAt: now
+    };
+    this.dailyChallenges.push(challenge);
+    return challenge;
+  }
+
+  async listDailyChallenges(input: { page: number; limit: number }): Promise<{ items: DailyChallengeWithProblem[]; total: number; page: number; limit: number }> {
+    const sorted = [...this.dailyChallenges].sort((a, b) => b.date.getTime() - a.date.getTime());
+    const start = (input.page - 1) * input.limit;
+    const pageItems = [];
+    for (const challenge of sorted.slice(start, start + input.limit)) {
+      pageItems.push({
+        ...challenge,
+        problem: (await this.findProblemById(challenge.problemId)) ?? undefined
+      });
+    }
+    return { items: pageItems, total: sorted.length, page: input.page, limit: input.limit };
+  }
+
+  async completeDailyChallengeForProblem(input: {
+    userId: string;
+    problemId: string;
+    submissionId?: string | null;
+    completedAt?: Date;
+  }): Promise<DailyChallengeCompletion | null> {
+    const completedAt = input.completedAt ?? new Date();
+    const challenge =
+      this.dailyChallenges.find(
+        (item) => item.problemId === input.problemId && this.dayKey(item.date) === this.dayKey(completedAt)
+      ) ?? null;
+    if (!challenge) return null;
+    const existing = this.dailyChallengeCompletions.find(
+      (item) => item.challengeId === challenge.id && item.userId === input.userId
+    );
+    if (existing) return existing;
+    const completion: DailyChallengeCompletion = {
+      id: uuid(),
+      challengeId: challenge.id,
+      userId: input.userId,
+      problemId: input.problemId,
+      submissionId: input.submissionId ?? null,
+      completedAt,
+      xpAwarded: challenge.rewardXp
+    };
+    this.dailyChallengeCompletions.push(completion);
+    return completion;
+  }
+
+  async listDailyChallengeCompletions(userId: string): Promise<DailyChallengeCompletion[]> {
+    return this.dailyChallengeCompletions
+      .filter((item) => item.userId === userId)
+      .sort((a, b) => b.completedAt.getTime() - a.completedAt.getTime());
+  }
+
+  async listBadgeDefinitions(includeInactive = false): Promise<BadgeDefinition[]> {
+    this.ensureDefaultBadges();
+    return this.badgeDefinitions
+      .filter((badge) => includeInactive || badge.isActive)
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  async createBadgeDefinition(input: {
+    key: string;
+    name: string;
+    description: string;
+    icon?: string | null;
+    triggerType: string;
+    triggerValue?: number;
+    isActive?: boolean;
+    createdById?: string | null;
+  }): Promise<BadgeDefinition> {
+    if (this.badgeDefinitions.some((badge) => badge.key === input.key)) {
+      throw ApiError.conflict("Badge key already exists");
+    }
+    const now = new Date();
+    const badge: BadgeDefinition = {
+      id: uuid(),
+      key: input.key,
+      name: input.name,
+      description: input.description,
+      icon: input.icon ?? null,
+      triggerType: input.triggerType,
+      triggerValue: input.triggerValue ?? 1,
+      isActive: input.isActive ?? true,
+      createdById: input.createdById ?? null,
+      createdAt: now,
+      updatedAt: now
+    };
+    this.badgeDefinitions.push(badge);
+    return badge;
+  }
+
+  async updateBadgeDefinition(
+    id: string,
+    input: Partial<Pick<BadgeDefinition, "name" | "description" | "icon" | "triggerType" | "triggerValue" | "isActive">>
+  ): Promise<BadgeDefinition> {
+    const badge = this.badgeDefinitions.find((item) => item.id === id);
+    if (!badge) throw ApiError.notFound("Badge not found");
+    Object.assign(badge, input, { updatedAt: new Date() });
+    return badge;
+  }
+
+  async awardBadge(input: {
+    userId: string;
+    badgeKey: string;
+    sourceType?: string | null;
+    sourceId?: string | null;
+  }): Promise<UserBadgeWithDefinition | null> {
+    this.ensureDefaultBadges();
+    const badge = this.badgeDefinitions.find((item) => item.key === input.badgeKey && item.isActive);
+    if (!badge) return null;
+    const sourceType = input.sourceType ?? null;
+    const sourceId = input.sourceId ?? null;
+    const existing = this.userBadges.find(
+      (item) =>
+        item.userId === input.userId &&
+        item.badgeId === badge.id &&
+        (sourceType ? item.sourceType === sourceType && item.sourceId === sourceId : true)
+    );
+    if (existing) return existing;
+    const award: UserBadgeWithDefinition = {
+      id: uuid(),
+      userId: input.userId,
+      badgeId: badge.id,
+      sourceType,
+      sourceId,
+      awardedAt: new Date(),
+      badge
+    };
+    this.userBadges.push(award);
+    return award;
+  }
+
+  async listUserBadges(userId: string): Promise<UserBadgeWithDefinition[]> {
+    this.ensureDefaultBadges();
+    return this.userBadges
+      .filter((award) => award.userId === userId)
+      .map((award) => ({
+        ...award,
+        badge: this.badgeDefinitions.find((badge) => badge.id === award.badgeId) ?? award.badge
+      }))
+      .sort((a, b) => b.awardedAt.getTime() - a.awardedAt.getTime());
   }
 
   async listTestCases(problemId: string, samplesOnly = false): Promise<TestCase[]> {
@@ -617,6 +1070,27 @@ export class MemoryRepository implements AppRepository {
     if (input.userId) items = items.filter((submission) => submission.userId === input.userId);
     if (input.problemId) items = items.filter((submission) => submission.problemId === input.problemId);
     if (input.status) items = items.filter((submission) => submission.status === input.status);
+    if (input.language) {
+      const needle = input.language.toLowerCase();
+      items = items.filter((submission) => {
+        const haystack = [
+          submission.language,
+          submission.languageKeySnapshot,
+          submission.languageNameSnapshot,
+          submission.languageVersionSnapshot
+        ]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase();
+        return haystack.includes(needle);
+      });
+    }
+    if (input.dateFrom) {
+      items = items.filter((submission) => submission.createdAt >= input.dateFrom!);
+    }
+    if (input.dateTo) {
+      items = items.filter((submission) => submission.createdAt <= input.dateTo!);
+    }
     items.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
     const start = (input.page - 1) * input.limit;
     return {
@@ -681,6 +1155,10 @@ export class MemoryRepository implements AppRepository {
     status.firstSolvedAt = status.firstSolvedAt ?? (solved ? now : null);
     status.lastSubmittedAt = now;
     return status;
+  }
+
+  async getProblemSolvedStatus(userId: string, problemId: string): Promise<ProblemSolvedStatus | null> {
+    return this.solvedStatuses.find((item) => item.userId === userId && item.problemId === problemId) ?? null;
   }
 
   async getUserStats(userId: string): Promise<UserStats> {
@@ -748,6 +1226,10 @@ export class MemoryRepository implements AppRepository {
     createdById?: string | null;
     problemIds: string[];
     visibility?: "PUBLIC" | "PRIVATE" | "ARCHIVED";
+    freezeStartsAt?: Date | null;
+    isRated?: boolean;
+    ratingSeason?: string | null;
+    ratingScheduledAt?: Date | null;
   }): Promise<Contest> {
     if (this.contests.some((contest) => contest.slug === input.slug)) {
       throw ApiError.conflict("Contest slug already exists");
@@ -762,6 +1244,11 @@ export class MemoryRepository implements AppRepository {
       endTime: input.endTime,
       status: this.deriveContestStatus(input.startTime, input.endTime),
       visibility: input.visibility ?? "PUBLIC",
+      freezeStartsAt: input.freezeStartsAt ?? null,
+      isRated: input.isRated ?? true,
+      ratingSeason: input.ratingSeason ?? null,
+      ratingScheduledAt: input.ratingScheduledAt ?? null,
+      ratingsPublishedAt: null,
       createdById: input.createdById ?? null,
       createdAt: now,
       updatedAt: now
@@ -775,7 +1262,23 @@ export class MemoryRepository implements AppRepository {
 
   async updateContest(
     id: string,
-    input: Partial<Pick<Contest, "title" | "slug" | "description" | "startTime" | "endTime" | "status" | "visibility">>
+    input: Partial<
+      Pick<
+        Contest,
+        | "title"
+        | "slug"
+        | "description"
+        | "startTime"
+        | "endTime"
+        | "status"
+        | "visibility"
+        | "freezeStartsAt"
+        | "isRated"
+        | "ratingSeason"
+        | "ratingScheduledAt"
+        | "ratingsPublishedAt"
+      >
+    >
   ): Promise<Contest & { problems: ContestProblem[] }> {
     const contest = this.requireContest(id);
     if (input.slug && this.contests.some((item) => item.id !== id && item.slug === input.slug)) {
@@ -794,6 +1297,8 @@ export class MemoryRepository implements AppRepository {
     this.contestProblems = this.contestProblems.filter((item) => item.contestId !== id);
     this.contestRegistrations = this.contestRegistrations.filter((item) => item.contestId !== id);
     this.contestSubmissions = this.contestSubmissions.filter((item) => item.contestId !== id);
+    this.contestAnnouncements = this.contestAnnouncements.filter((item) => item.contestId !== id);
+    this.contestRatingJobs = this.contestRatingJobs.filter((item) => item.contestId !== id);
   }
 
   async addContestProblem(contestId: string, problemId: string, points: number): Promise<ContestProblem> {
@@ -910,9 +1415,13 @@ export class MemoryRepository implements AppRepository {
     });
   }
 
-  async getContestLeaderboard(contestId: string): Promise<ContestLeaderboardRow[]> {
+  async getContestLeaderboard(contestId: string, options: { before?: Date } = {}): Promise<ContestLeaderboardRow[]> {
     const byUser = new Map<string, { solved: Set<string>; penalty: number }>();
-    for (const item of this.contestSubmissions.filter((submission) => submission.contestId === contestId)) {
+    for (const item of this.contestSubmissions.filter(
+      (submission) =>
+        submission.contestId === contestId &&
+        (!options.before || submission.submittedAt.getTime() <= options.before.getTime())
+    )) {
       const entry = byUser.get(item.userId) ?? { solved: new Set<string>(), penalty: 0 };
       if (item.status === "ACCEPTED" && !entry.solved.has(item.problemId)) {
         entry.solved.add(item.problemId);
@@ -934,7 +1443,7 @@ export class MemoryRepository implements AppRepository {
   async getEditorial(problemId: string, includeDraft = false): Promise<Editorial | null> {
     const editorial = this.editorials.find((item) => item.problemId === problemId) ?? null;
     if (!editorial) return null;
-    return includeDraft || editorial.isPublished ? editorial : null;
+    return includeDraft || editorial.isPublished ? this.withEditorialStructure(editorial) : null;
   }
 
   async upsertEditorial(input: {
@@ -943,6 +1452,7 @@ export class MemoryRepository implements AppRepository {
     title: string;
     content: string;
     isPublished?: boolean;
+    structure?: EditorialStructureInput;
   }): Promise<Editorial> {
     this.requireProblem(input.problemId);
     const existing = this.editorials.find((item) => item.problemId === input.problemId);
@@ -956,7 +1466,10 @@ export class MemoryRepository implements AppRepository {
         publishedAt: input.isPublished ? (existing.publishedAt ?? now) : existing.publishedAt,
         updatedAt: now
       });
-      return existing;
+      if (input.structure) {
+        await this.setEditorialStructure(existing.id, input.structure);
+      }
+      return this.withEditorialStructure(existing);
     }
     const editorial: Editorial = {
       id: uuid(),
@@ -970,7 +1483,10 @@ export class MemoryRepository implements AppRepository {
       updatedAt: now
     };
     this.editorials.push(editorial);
-    return editorial;
+    if (input.structure) {
+      await this.setEditorialStructure(editorial.id, input.structure);
+    }
+    return this.withEditorialStructure(editorial);
   }
 
   async updateEditorial(id: string, input: { title?: string; content?: string }): Promise<Editorial> {
@@ -982,6 +1498,8 @@ export class MemoryRepository implements AppRepository {
   async deleteEditorial(id: string): Promise<void> {
     this.requireEditorial(id);
     this.editorials = this.editorials.filter((editorial) => editorial.id !== id);
+    this.editorialSections = this.editorialSections.filter((section) => section.editorialId !== id);
+    this.editorialOfficialSolutions = this.editorialOfficialSolutions.filter((solution) => solution.editorialId !== id);
   }
 
   async setEditorialPublished(id: string, isPublished: boolean): Promise<Editorial> {
@@ -989,7 +1507,49 @@ export class MemoryRepository implements AppRepository {
     editorial.isPublished = isPublished;
     editorial.publishedAt = isPublished ? (editorial.publishedAt ?? new Date()) : null;
     editorial.updatedAt = new Date();
-    return editorial;
+    return this.withEditorialStructure(editorial);
+  }
+
+  async setEditorialStructure(editorialId: string, input: EditorialStructureInput): Promise<Editorial> {
+    const editorial = this.requireEditorial(editorialId);
+    if (input.sections) {
+      this.editorialSections = this.editorialSections.filter((item) => item.editorialId !== editorialId);
+      this.editorialSections.push(
+        ...input.sections.map((section, index) => ({
+          id: uuid(),
+          editorialId,
+          type: section.type ?? "TEXT",
+          title: section.title,
+          content: section.content,
+          language: section.language ?? null,
+          order: section.order ?? index,
+          isLocked: section.isLocked ?? false,
+          createdAt: new Date(),
+          updatedAt: new Date()
+        }))
+      );
+    }
+    if (input.officialSolutions) {
+      this.editorialOfficialSolutions = this.editorialOfficialSolutions.filter(
+        (item) => item.editorialId !== editorialId
+      );
+      this.editorialOfficialSolutions.push(
+        ...input.officialSolutions.map((solution, index) => ({
+          id: uuid(),
+          editorialId,
+          language: solution.language,
+          code: solution.code,
+          explanation: solution.explanation ?? null,
+          timeComplexity: solution.timeComplexity ?? null,
+          spaceComplexity: solution.spaceComplexity ?? null,
+          order: solution.order ?? index,
+          createdAt: new Date(),
+          updatedAt: new Date()
+        }))
+      );
+    }
+    editorial.updatedAt = new Date();
+    return this.withEditorialStructure(editorial);
   }
 
   async listDiscussions(input: {
@@ -998,6 +1558,7 @@ export class MemoryRepository implements AppRepository {
     page: number;
     limit: number;
     search?: string;
+    sort?: DiscussionSort;
   }) {
     let items = this.discussions.filter((discussion) => {
       if (input.problemId !== undefined) return discussion.problemId === input.problemId;
@@ -1013,7 +1574,21 @@ export class MemoryRepository implements AppRepository {
           discussion.tags.some((tag) => tag.toLowerCase().includes(needle))
       );
     }
-    items = [...items].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+    if (input.sort === "unanswered") {
+      items = items.filter((discussion) => {
+        const commentCount = this.comments.filter((comment) => comment.discussionId === discussion.id).length;
+        return commentCount === 0;
+      });
+    }
+
+    items = [...items].sort((a, b) => {
+      if (input.sort === "top") {
+        const scoreA = a.upvotes - (a.downvotes ?? 0);
+        const scoreB = b.upvotes - (b.downvotes ?? 0);
+        if (scoreA !== scoreB) return scoreB - scoreA;
+      }
+      return b.createdAt.getTime() - a.createdAt.getTime();
+    });
     const start = (input.page - 1) * input.limit;
     return {
       items: items.slice(start, start + input.limit).map((discussion) => this.withDiscussionRelations(discussion)),
@@ -1052,6 +1627,10 @@ export class MemoryRepository implements AppRepository {
     return discussion;
   }
 
+  async findDiscussionCommentById(id: string): Promise<DiscussionComment | null> {
+    return this.comments.find((comment) => comment.id === id) ?? null;
+  }
+
   async addDiscussionComment(input: {
     discussionId: string;
     authorId: string;
@@ -1063,6 +1642,8 @@ export class MemoryRepository implements AppRepository {
       id: uuid(),
       ...input,
       upvotes: 0,
+      helpfulVotes: 0,
+      isAcceptedAnswer: false,
       createdAt: now,
       updatedAt: now
     };
@@ -1090,6 +1671,10 @@ export class MemoryRepository implements AppRepository {
     this.discussions = this.discussions.filter((item) => item.id !== id);
     this.comments = this.comments.filter((item) => item.discussionId !== id);
     this.discussionVotes = this.discussionVotes.filter((item) => item.discussionId !== id);
+    this.discussionHelpfulVotes = this.discussionHelpfulVotes.filter(
+      (item) => this.comments.some((comment) => comment.id === item.commentId)
+    );
+    this.discussionAcceptedAnswers = this.discussionAcceptedAnswers.filter((item) => item.discussionId !== id);
   }
 
   async updateDiscussionComment(
@@ -1109,6 +1694,8 @@ export class MemoryRepository implements AppRepository {
     const comment = this.requireDiscussionComment(id);
     if (!isAdmin && comment.authorId !== authorId) throw ApiError.forbidden("Only the author can delete this comment");
     this.comments = this.comments.filter((item) => item.id !== id);
+    this.discussionHelpfulVotes = this.discussionHelpfulVotes.filter((item) => item.commentId !== id);
+    this.discussionAcceptedAnswers = this.discussionAcceptedAnswers.filter((item) => item.commentId !== id);
   }
 
   async voteDiscussion(discussionId: string, userId: string, value: 1 | -1): Promise<DiscussionVote> {
@@ -1127,6 +1714,688 @@ export class MemoryRepository implements AppRepository {
     discussion.downvotes = votes.filter((item) => item.value === -1).length;
     discussion.updatedAt = now;
     return vote;
+  }
+
+  async hasDiscussionCommentHelpfulVote(commentId: string, userId: string): Promise<boolean> {
+    return this.discussionHelpfulVotes.some((item) => item.commentId === commentId && item.userId === userId);
+  }
+
+  async voteDiscussionCommentHelpful(commentId: string, userId: string): Promise<DiscussionHelpfulVote> {
+    const comment = this.requireDiscussionComment(commentId);
+    let vote = this.discussionHelpfulVotes.find((item) => item.commentId === commentId && item.userId === userId);
+    if (!vote) {
+      vote = { id: uuid(), commentId, userId, createdAt: new Date() };
+      this.discussionHelpfulVotes.push(vote);
+    }
+    comment.helpfulVotes = this.discussionHelpfulVotes.filter((item) => item.commentId === commentId).length;
+    return vote;
+  }
+
+  async unvoteDiscussionCommentHelpful(commentId: string, userId: string): Promise<void> {
+    const comment = this.requireDiscussionComment(commentId);
+    this.discussionHelpfulVotes = this.discussionHelpfulVotes.filter(
+      (item) => !(item.commentId === commentId && item.userId === userId)
+    );
+    comment.helpfulVotes = this.discussionHelpfulVotes.filter((item) => item.commentId === commentId).length;
+  }
+
+  async acceptDiscussionAnswer(
+    discussionId: string,
+    commentId: string,
+    actorId: string
+  ): Promise<DiscussionAcceptedAnswer> {
+    const discussion = this.requireDiscussion(discussionId);
+    const comment = this.requireDiscussionComment(commentId);
+    if (comment.discussionId !== discussionId) {
+      throw ApiError.badRequest("Comment does not belong to this discussion");
+    }
+    if (discussion.authorId !== actorId) {
+      const actor = this.requireUser(actorId);
+      if (actor.role !== "ADMIN") {
+        throw ApiError.forbidden("Only the discussion author or an admin can accept an answer");
+      }
+    }
+    this.discussionAcceptedAnswers = this.discussionAcceptedAnswers.filter((item) => item.discussionId !== discussionId);
+    const accepted: DiscussionAcceptedAnswer = {
+      id: uuid(),
+      discussionId,
+      commentId,
+      acceptedById: actorId,
+      createdAt: new Date()
+    };
+    this.discussionAcceptedAnswers.push(accepted);
+    return accepted;
+  }
+
+  async listSolutions(input: ListSolutionsInput): Promise<{ items: SolutionWithRelations[]; total: number; page: number; limit: number }> {
+    let items = this.solutions.slice();
+    if (input.problemId) {
+      items = items.filter((solution) => solution.problemId === input.problemId);
+    }
+    if (input.authorId) {
+      items = items.filter((solution) => solution.authorId === input.authorId);
+    }
+    if (!input.includePrivate) {
+      items = items.filter(
+        (solution) => solution.visibility === "PUBLIC" || Boolean(input.viewerId && solution.authorId === input.viewerId)
+      );
+    }
+    items.sort((a, b) => Number(b.isPinned) - Number(a.isPinned) || b.createdAt.getTime() - a.createdAt.getTime());
+    const start = (input.page - 1) * input.limit;
+    return {
+      items: items.slice(start, start + input.limit).map((solution) => this.withSolutionRelations(solution)),
+      total: items.length,
+      page: input.page,
+      limit: input.limit
+    };
+  }
+
+  async findSolutionById(id: string): Promise<SolutionWithRelations | null> {
+    const solution = this.solutions.find((item) => item.id === id);
+    return solution ? this.withSolutionRelations(solution) : null;
+  }
+
+  async createSolution(input: CreateSolutionInput): Promise<Solution> {
+    this.requireProblem(input.problemId);
+    this.requireUser(input.authorId);
+    if (input.submissionId) {
+      this.requireSubmission(input.submissionId);
+    }
+    const now = new Date();
+    const solution: Solution = {
+      id: uuid(),
+      problemId: input.problemId,
+      authorId: input.authorId,
+      submissionId: input.submissionId ?? null,
+      title: input.title,
+      content: input.content,
+      code: input.code,
+      language: input.language,
+      timeComplexity: input.timeComplexity ?? null,
+      spaceComplexity: input.spaceComplexity ?? null,
+      visibility: input.visibility ?? "PUBLIC",
+      upvotes: 0,
+      downvotes: 0,
+      isPinned: input.isPinned ?? false,
+      createdAt: now,
+      updatedAt: now
+    };
+    this.solutions.push(solution);
+    return solution;
+  }
+
+  async updateSolution(id: string, input: UpdateSolutionInput): Promise<Solution> {
+    const solution = this.requireSolution(id);
+    Object.assign(solution, input, { updatedAt: new Date() });
+    return solution;
+  }
+
+  async deleteSolution(id: string): Promise<void> {
+    this.requireSolution(id);
+    this.solutions = this.solutions.filter((solution) => solution.id !== id);
+    this.solutionVotes = this.solutionVotes.filter((vote) => vote.solutionId !== id);
+  }
+
+  async voteSolution(solutionId: string, userId: string, value: 1 | -1): Promise<SolutionVote> {
+    const solution = this.requireSolution(solutionId);
+    this.requireUser(userId);
+    const now = new Date();
+    let vote = this.solutionVotes.find((item) => item.solutionId === solutionId && item.userId === userId);
+    if (!vote) {
+      vote = { id: uuid(), solutionId, userId, value, createdAt: now, updatedAt: now };
+      this.solutionVotes.push(vote);
+    } else {
+      vote.value = value;
+      vote.updatedAt = now;
+    }
+    const votes = this.solutionVotes.filter((item) => item.solutionId === solutionId);
+    solution.upvotes = votes.filter((item) => item.value === 1).length;
+    solution.downvotes = votes.filter((item) => item.value === -1).length;
+    solution.updatedAt = now;
+    return vote;
+  }
+
+  async createReport(input: CreateReportInput): Promise<Report> {
+    const now = new Date();
+    const report: Report = {
+      id: uuid(),
+      targetType: input.targetType,
+      targetId: input.targetId,
+      reporterId: input.reporterId ?? null,
+      reason: input.reason,
+      details: input.details ?? null,
+      status: "OPEN",
+      moderatorId: null,
+      resolution: null,
+      createdAt: now,
+      updatedAt: now,
+      resolvedAt: null
+    };
+    this.reports.push(report);
+    return report;
+  }
+
+  async listReports(input: ListReportsInput): Promise<{ items: Report[]; total: number; page: number; limit: number }> {
+    let items = this.reports.slice();
+    if (input.status) {
+      items = items.filter((report) => report.status === input.status);
+    }
+    if (input.targetType) {
+      items = items.filter((report) => report.targetType === input.targetType);
+    }
+    if (input.reporterId) {
+      items = items.filter((report) => report.reporterId === input.reporterId);
+    }
+    items.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+    const start = (input.page - 1) * input.limit;
+    return { items: items.slice(start, start + input.limit), total: items.length, page: input.page, limit: input.limit };
+  }
+
+  async updateReport(id: string, input: UpdateReportInput): Promise<Report> {
+    const report = this.reports.find((item) => item.id === id);
+    if (!report) throw ApiError.notFound("Report not found");
+    Object.assign(report, input, { updatedAt: new Date() });
+    return report;
+  }
+
+  async followUser(followerId: string, followingId: string): Promise<UserFollow> {
+    this.requireUser(followerId);
+    this.requireUser(followingId);
+    const existing = this.follows.find((item) => item.followerId === followerId && item.followingId === followingId);
+    if (existing) return existing;
+    const follow: UserFollow = { id: uuid(), followerId, followingId, createdAt: new Date() };
+    this.follows.push(follow);
+    return follow;
+  }
+
+  async unfollowUser(followerId: string, followingId: string): Promise<void> {
+    this.follows = this.follows.filter((item) => !(item.followerId === followerId && item.followingId === followingId));
+  }
+
+  async isFollowing(followerId: string, followingId: string): Promise<boolean> {
+    return this.follows.some((item) => item.followerId === followerId && item.followingId === followingId);
+  }
+
+  async countFollowers(userId: string): Promise<number> {
+    return this.follows.filter((item) => item.followingId === userId).length;
+  }
+
+  async countFollowing(userId: string): Promise<number> {
+    return this.follows.filter((item) => item.followerId === userId).length;
+  }
+
+  async listFollowers(userId: string, input: { page: number; limit: number }): Promise<{ items: User[]; total: number; page: number; limit: number }> {
+    const ids = this.follows.filter((item) => item.followingId === userId).map((item) => item.followerId);
+    const items = this.users.filter((user) => ids.includes(user.id)).sort((a, b) => a.username.localeCompare(b.username));
+    const start = (input.page - 1) * input.limit;
+    return { items: items.slice(start, start + input.limit), total: items.length, page: input.page, limit: input.limit };
+  }
+
+  async listFollowing(userId: string, input: { page: number; limit: number }): Promise<{ items: User[]; total: number; page: number; limit: number }> {
+    const ids = this.follows.filter((item) => item.followerId === userId).map((item) => item.followingId);
+    const items = this.users.filter((user) => ids.includes(user.id)).sort((a, b) => a.username.localeCompare(b.username));
+    const start = (input.page - 1) * input.limit;
+    return { items: items.slice(start, start + input.limit), total: items.length, page: input.page, limit: input.limit };
+  }
+
+  async createNotification(input: CreateNotificationInput): Promise<Notification> {
+    this.requireUser(input.userId);
+    const notification: Notification = {
+      id: uuid(),
+      userId: input.userId,
+      actorId: input.actorId ?? null,
+      type: input.type,
+      title: input.title,
+      body: input.body,
+      link: input.link ?? null,
+      readAt: null,
+      createdAt: new Date()
+    };
+    this.notifications.push(notification);
+    return notification;
+  }
+
+  async listNotifications(input: ListNotificationsInput): Promise<{ items: Notification[]; total: number; page: number; limit: number }> {
+    let items = this.notifications.filter((notification) => notification.userId === input.userId);
+    if (input.unreadOnly) {
+      items = items.filter((notification) => !notification.readAt);
+    }
+    items = items.slice().sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+    const start = (input.page - 1) * input.limit;
+    return { items: items.slice(start, start + input.limit), total: items.length, page: input.page, limit: input.limit };
+  }
+
+  async markNotificationRead(id: string, userId: string): Promise<Notification> {
+    const notification = this.notifications.find((item) => item.id === id && item.userId === userId);
+    if (!notification) throw ApiError.notFound("Notification not found");
+    notification.readAt = notification.readAt ?? new Date();
+    return notification;
+  }
+
+  async markAllNotificationsRead(userId: string): Promise<number> {
+    const now = new Date();
+    let count = 0;
+    this.notifications.forEach((notification) => {
+      if (notification.userId === userId && !notification.readAt) {
+        notification.readAt = now;
+        count += 1;
+      }
+    });
+    return count;
+  }
+
+  async createAuditLog(input: CreateAuditLogInput): Promise<AdminAuditLog> {
+    const log: AdminAuditLog = {
+      id: uuid(),
+      actorId: input.actorId ?? null,
+      action: input.action,
+      entityType: input.entityType,
+      entityId: input.entityId ?? null,
+      requestMethod: input.requestMethod ?? null,
+      path: input.path ?? null,
+      statusCode: input.statusCode ?? null,
+      outcome: input.outcome ?? "SUCCESS",
+      details: input.details ?? null,
+      ip: input.ip ?? null,
+      userAgent: input.userAgent ?? null,
+      createdAt: new Date()
+    };
+    this.auditLogs.push(log);
+    return log;
+  }
+
+  async listAuditLogs(input: ListAuditLogsInput): Promise<{ items: AdminAuditLog[]; total: number; page: number; limit: number }> {
+    let items = this.auditLogs.slice();
+    if (input.actorId) {
+      items = items.filter((log) => log.actorId === input.actorId);
+    }
+    if (input.entityType) {
+      items = items.filter((log) => log.entityType === input.entityType);
+    }
+    items.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+    const start = (input.page - 1) * input.limit;
+    return { items: items.slice(start, start + input.limit), total: items.length, page: input.page, limit: input.limit };
+  }
+
+  async recordApiUsageEvent(input: CreateApiUsageEventInput): Promise<ApiUsageEvent> {
+    const event: ApiUsageEvent = {
+      id: uuid(),
+      userId: input.userId ?? null,
+      method: input.method,
+      path: input.path,
+      route: input.route ?? null,
+      statusCode: input.statusCode,
+      durationMs: input.durationMs,
+      ip: input.ip ?? null,
+      userAgent: input.userAgent ?? null,
+      rateLimited: input.rateLimited ?? false,
+      createdAt: new Date()
+    };
+    this.apiUsageEvents.push(event);
+    return event;
+  }
+
+  async listApiUsageEvents(input: ListApiUsageEventsInput): Promise<{ items: ApiUsageEvent[]; total: number; page: number; limit: number }> {
+    let items = this.apiUsageEvents.slice();
+    if (input.userId) {
+      items = items.filter((event) => event.userId === input.userId);
+    }
+    if (input.path) {
+      items = items.filter((event) => event.path.includes(input.path!));
+    }
+    if (input.statusCode !== undefined) {
+      items = items.filter((event) => event.statusCode === input.statusCode);
+    }
+    if (input.since) {
+      items = items.filter((event) => event.createdAt >= input.since!);
+    }
+    if (input.rateLimited !== undefined) {
+      items = items.filter((event) => event.rateLimited === input.rateLimited);
+    }
+    items.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+    const start = (input.page - 1) * input.limit;
+    return { items: items.slice(start, start + input.limit), total: items.length, page: input.page, limit: input.limit };
+  }
+
+  async deleteApiUsageEventsBefore(cutoff: Date): Promise<number> {
+    const before = this.apiUsageEvents.length;
+    this.apiUsageEvents = this.apiUsageEvents.filter((event) => event.createdAt >= cutoff);
+    return before - this.apiUsageEvents.length;
+  }
+
+  async createBackupRun(input: CreateBackupRunInput): Promise<BackupRun> {
+    const startedAt = input.startedAt ?? new Date();
+    const run: BackupRun = {
+      id: uuid(),
+      requestedById: input.requestedById ?? null,
+      status: input.status,
+      filename: input.filename ?? null,
+      sizeBytes: input.sizeBytes ?? null,
+      errorMessage: input.errorMessage ?? null,
+      startedAt,
+      completedAt: input.completedAt ?? null,
+      createdAt: new Date()
+    };
+    this.backupRuns.push(run);
+    return run;
+  }
+
+  async updateBackupRun(id: string, input: UpdateBackupRunInput): Promise<BackupRun> {
+    const run = this.backupRuns.find((item) => item.id === id);
+    if (!run) throw ApiError.notFound("Backup run not found");
+    Object.assign(run, input);
+    return run;
+  }
+
+  async listBackupRuns(input: ListBackupRunsInput): Promise<{ items: BackupRun[]; total: number; page: number; limit: number }> {
+    let items = this.backupRuns.slice();
+    if (input.status) {
+      items = items.filter((run) => run.status === input.status);
+    }
+    items.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+    const start = (input.page - 1) * input.limit;
+    return { items: items.slice(start, start + input.limit), total: items.length, page: input.page, limit: input.limit };
+  }
+
+  async createHealthCheckSnapshot(input: CreateHealthCheckSnapshotInput): Promise<HealthCheckSnapshot> {
+    const snapshot: HealthCheckSnapshot = {
+      id: uuid(),
+      status: input.status,
+      details: input.details,
+      createdAt: new Date()
+    };
+    this.healthSnapshots.push(snapshot);
+    return snapshot;
+  }
+
+  async listHealthCheckSnapshots(input: ListHealthCheckSnapshotsInput): Promise<{ items: HealthCheckSnapshot[]; total: number; page: number; limit: number }> {
+    let items = this.healthSnapshots.slice();
+    if (input.status) {
+      items = items.filter((snapshot) => snapshot.status === input.status);
+    }
+    items.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+    const start = (input.page - 1) * input.limit;
+    return { items: items.slice(start, start + input.limit), total: items.length, page: input.page, limit: input.limit };
+  }
+
+  async createPracticeSession(input: CreatePracticeSessionInput): Promise<PracticeSessionWithProblems> {
+    this.requireUser(input.userId);
+    const now = new Date();
+    const session: PracticeSession = {
+      id: uuid(),
+      userId: input.userId,
+      type: input.type,
+      status: "ACTIVE",
+      title: input.title,
+      durationSeconds: input.durationSeconds,
+      startedAt: now,
+      finishedAt: null,
+      settings: input.settings ?? null,
+      summary: null,
+      createdAt: now,
+      updatedAt: now
+    };
+    this.practiceSessions.push(session);
+    input.problemIds.forEach((problemId, index) => {
+      this.requireProblem(problemId);
+      this.practiceSessionProblems.push({
+        id: uuid(),
+        sessionId: session.id,
+        problemId,
+        order: index,
+        outcome: null,
+        secondsSpent: null,
+        submissionId: null,
+        createdAt: now,
+        updatedAt: now
+      });
+    });
+    return this.withPracticeProblems(session);
+  }
+
+  async listPracticeSessions(input: {
+    userId: string;
+    type?: PracticeSession["type"];
+    page: number;
+    limit: number;
+  }): Promise<{ items: PracticeSessionWithProblems[]; total: number; page: number; limit: number }> {
+    let items = this.practiceSessions.filter((session) => session.userId === input.userId);
+    if (input.type) {
+      items = items.filter((session) => session.type === input.type);
+    }
+    items.sort((a, b) => b.startedAt.getTime() - a.startedAt.getTime());
+    const start = (input.page - 1) * input.limit;
+    return {
+      items: items.slice(start, start + input.limit).map((session) => this.withPracticeProblems(session)),
+      total: items.length,
+      page: input.page,
+      limit: input.limit
+    };
+  }
+
+  async findPracticeSessionById(id: string): Promise<PracticeSessionWithProblems | null> {
+    const session = this.practiceSessions.find((item) => item.id === id);
+    return session ? this.withPracticeProblems(session) : null;
+  }
+
+  async updatePracticeSession(id: string, input: UpdatePracticeSessionInput): Promise<PracticeSessionWithProblems> {
+    const session = this.requirePracticeSession(id);
+    Object.assign(session, input, { updatedAt: new Date() });
+    return this.withPracticeProblems(session);
+  }
+
+  async updatePracticeSessionProblem(
+    sessionProblemId: string,
+    input: UpdatePracticeSessionProblemInput
+  ): Promise<PracticeSessionProblem> {
+    const row = this.practiceSessionProblems.find((item) => item.id === sessionProblemId);
+    if (!row) throw ApiError.notFound("Practice session problem not found");
+    Object.assign(row, input, { updatedAt: new Date() });
+    return row;
+  }
+
+  async createContestAnnouncement(input: {
+    contestId: string;
+    authorId: string;
+    title: string;
+    content: string;
+  }): Promise<ContestAnnouncement> {
+    this.requireContest(input.contestId);
+    this.requireUser(input.authorId);
+    const now = new Date();
+    const announcement: ContestAnnouncement = {
+      id: uuid(),
+      contestId: input.contestId,
+      authorId: input.authorId,
+      title: input.title,
+      content: input.content,
+      createdAt: now,
+      updatedAt: now
+    };
+    this.contestAnnouncements.push(announcement);
+    return announcement;
+  }
+
+  async listContestAnnouncements(contestId: string): Promise<ContestAnnouncement[]> {
+    return this.contestAnnouncements
+      .filter((item) => item.contestId === contestId)
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+  }
+
+  async createContestRatingJob(input: {
+    contestId: string;
+    requestedById?: string | null;
+    scheduledAt: Date;
+  }): Promise<ContestRatingJob> {
+    this.requireContest(input.contestId);
+    const now = new Date();
+    const job: ContestRatingJob = {
+      id: uuid(),
+      contestId: input.contestId,
+      requestedById: input.requestedById ?? null,
+      status: "SCHEDULED",
+      scheduledAt: input.scheduledAt,
+      startedAt: null,
+      completedAt: null,
+      errorMessage: null,
+      createdAt: now,
+      updatedAt: now
+    };
+    this.contestRatingJobs.push(job);
+    return job;
+  }
+
+  async listContestRatingJobs(input: {
+    status?: ContestRatingJob["status"];
+    page: number;
+    limit: number;
+  }): Promise<{ items: ContestRatingJob[]; total: number; page: number; limit: number }> {
+    let items = this.contestRatingJobs.slice();
+    if (input.status) {
+      items = items.filter((job) => job.status === input.status);
+    }
+    items.sort((a, b) => a.scheduledAt.getTime() - b.scheduledAt.getTime());
+    const start = (input.page - 1) * input.limit;
+    return { items: items.slice(start, start + input.limit), total: items.length, page: input.page, limit: input.limit };
+  }
+
+  async updateContestRatingJob(
+    id: string,
+    input: Partial<Pick<ContestRatingJob, "status" | "startedAt" | "completedAt" | "errorMessage">>
+  ): Promise<ContestRatingJob> {
+    const job = this.contestRatingJobs.find((item) => item.id === id);
+    if (!job) throw ApiError.notFound("Rating job not found");
+    Object.assign(job, input, { updatedAt: new Date() });
+    return job;
+  }
+
+  async createMonitoringAlert(input: {
+    severity: string;
+    source: string;
+    title: string;
+    message: string;
+    details?: Record<string, unknown> | null;
+  }): Promise<MonitoringAlert> {
+    const now = new Date();
+    const alert: MonitoringAlert = {
+      id: uuid(),
+      status: "OPEN",
+      severity: input.severity,
+      source: input.source,
+      title: input.title,
+      message: input.message,
+      details: input.details ?? null,
+      acknowledgedById: null,
+      acknowledgedAt: null,
+      resolvedById: null,
+      resolvedAt: null,
+      createdAt: now,
+      updatedAt: now
+    };
+    this.monitoringAlerts.push(alert);
+    return alert;
+  }
+
+  async listMonitoringAlerts(input: {
+    status?: MonitoringAlert["status"];
+    page: number;
+    limit: number;
+  }): Promise<{ items: MonitoringAlert[]; total: number; page: number; limit: number }> {
+    let items = this.monitoringAlerts.slice();
+    if (input.status) {
+      items = items.filter((alert) => alert.status === input.status);
+    }
+    items.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+    const start = (input.page - 1) * input.limit;
+    return { items: items.slice(start, start + input.limit), total: items.length, page: input.page, limit: input.limit };
+  }
+
+  async updateMonitoringAlert(
+    id: string,
+    input: Partial<Pick<MonitoringAlert, "status" | "acknowledgedById" | "acknowledgedAt" | "resolvedById" | "resolvedAt">>
+  ): Promise<MonitoringAlert> {
+    const alert = this.monitoringAlerts.find((item) => item.id === id);
+    if (!alert) throw ApiError.notFound("Monitoring alert not found");
+    Object.assign(alert, input, { updatedAt: new Date() });
+    return alert;
+  }
+
+  async getUserRating(userId: string): Promise<UserRating | null> {
+    return this.userRatings.find((rating) => rating.userId === userId) ?? null;
+  }
+
+  async upsertUserRating(input: UpsertUserRatingInput): Promise<UserRating> {
+    const now = new Date();
+    let rating = this.userRatings.find((item) => item.userId === input.userId);
+    if (!rating) {
+      rating = {
+        id: uuid(),
+        userId: input.userId,
+        rating: input.rating,
+        volatility: input.volatility,
+        contestsRated: input.contestsRated,
+        createdAt: now,
+        updatedAt: now
+      };
+      this.userRatings.push(rating);
+      return rating;
+    }
+    Object.assign(rating, input, { updatedAt: now });
+    return rating;
+  }
+
+  async listUserRatings(input: { page: number; limit: number }): Promise<{ items: Array<UserRating & { user?: Pick<User, "id" | "username" | "displayName" | "avatarUrl" | "country" | "countryCode"> }>; total: number; page: number; limit: number }> {
+    const items = this.userRatings
+      .slice()
+      .sort((a, b) => b.rating - a.rating)
+      .map((rating) => {
+        const user = this.users.find((item) => item.id === rating.userId);
+        return user ? { ...rating, user: this.publicLeaderboardUser(user) } : rating;
+      });
+    const start = (input.page - 1) * input.limit;
+    return { items: items.slice(start, start + input.limit), total: items.length, page: input.page, limit: input.limit };
+  }
+
+  async createRatingEvent(input: CreateRatingEventInput): Promise<RatingEvent> {
+    const existing = this.ratingEvents.find(
+      (event) => event.userId === input.userId && event.contestId === (input.contestId ?? null)
+    );
+    if (existing) {
+      Object.assign(existing, input);
+      return existing;
+    }
+    const event: RatingEvent = {
+      id: uuid(),
+      userId: input.userId,
+      contestId: input.contestId ?? null,
+      oldRating: input.oldRating,
+      newRating: input.newRating,
+      delta: input.delta,
+      rank: input.rank,
+      participants: input.participants,
+      createdAt: new Date()
+    };
+    this.ratingEvents.push(event);
+    return event;
+  }
+
+  async listRatingEvents(input: ListRatingEventsInput): Promise<{ items: RatingEvent[]; total: number; page: number; limit: number }> {
+    let items = this.ratingEvents.slice();
+    if (input.userId) {
+      items = items.filter((event) => event.userId === input.userId);
+    }
+    if (input.contestId) {
+      items = items.filter((event) => event.contestId === input.contestId);
+    }
+    items.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+    const start = (input.page - 1) * input.limit;
+    return { items: items.slice(start, start + input.limit), total: items.length, page: input.page, limit: input.limit };
+  }
+
+  async deleteRatingEventsByContest(contestId: string): Promise<number> {
+    const before = this.ratingEvents.length;
+    this.ratingEvents = this.ratingEvents.filter((event) => event.contestId !== contestId);
+    return before - this.ratingEvents.length;
   }
 
   async listBookmarks(userId: string): Promise<Array<Bookmark & { problem: Problem }>> {
@@ -1347,7 +2616,7 @@ export class MemoryRepository implements AppRepository {
     });
   }
 
-  // seed helper — password is always Password123! for demo accounts
+  // seed helper - password is always Password123! for demo accounts
   private makeUser(email: string, username: string, displayName: string, role: "USER" | "ADMIN"): User {
     const now = new Date();
 
@@ -1401,6 +2670,57 @@ export class MemoryRepository implements AppRepository {
       result.push(tag);
     }
     return result;
+  }
+
+  private problemStats(problemId: string) {
+    const totalSubmissions = this.submissions.filter((submission) => submission.problemId === problemId).length;
+    const acceptedSubmissions = this.submissions.filter(
+      (submission) => submission.problemId === problemId && submission.status === "ACCEPTED"
+    ).length;
+    const solvedCount = this.solvedStatuses.filter((status) => status.problemId === problemId && status.solved).length;
+
+    return {
+      totalSubmissions,
+      acceptedSubmissions,
+      solvedCount,
+      acceptanceRate: totalSubmissions ? Math.round((acceptedSubmissions / totalSubmissions) * 100) : 0,
+      frequency: totalSubmissions
+    };
+  }
+
+  private sortProblems<T extends Problem & { status?: ProblemStatus }>(items: T[], sort: ProblemFilters["sort"]): T[] {
+    const difficultyOrder: Record<Difficulty, number> = {
+      EASY: 1,
+      MEDIUM: 2,
+      HARD: 3
+    };
+
+    const copy = items.slice();
+    copy.sort((a, b) => {
+      if (sort === "oldest") {
+        return a.createdAt.getTime() - b.createdAt.getTime();
+      }
+      if (sort === "title") {
+        return a.title.localeCompare(b.title);
+      }
+      if (sort === "difficulty") {
+        const diff = difficultyOrder[a.difficulty] - difficultyOrder[b.difficulty];
+        if (diff !== 0) return diff;
+        return a.title.localeCompare(b.title);
+      }
+      if (sort === "acceptance") {
+        return (b.acceptanceRate ?? 0) - (a.acceptanceRate ?? 0) || a.title.localeCompare(b.title);
+      }
+      if (sort === "submissions" || sort === "frequency") {
+        return (b.totalSubmissions ?? 0) - (a.totalSubmissions ?? 0) || a.title.localeCompare(b.title);
+      }
+      if (sort === "solved") {
+        return (b.solvedCount ?? 0) - (a.solvedCount ?? 0) || a.title.localeCompare(b.title);
+      }
+
+      return b.createdAt.getTime() - a.createdAt.getTime();
+    });
+    return copy;
   }
 
   // heatmap calendar: count submissions per day
@@ -1495,6 +2815,111 @@ export class MemoryRepository implements AppRepository {
     };
   }
 
+  private withSolutionRelations(solution: Solution): SolutionWithRelations {
+    const author = this.requireUser(solution.authorId);
+    const problem = this.requireProblem(solution.problemId);
+    return {
+      ...solution,
+      author: {
+        id: author.id,
+        username: author.username,
+        displayName: author.displayName,
+        avatarUrl: author.avatarUrl
+      },
+      problem: {
+        id: problem.id,
+        slug: problem.slug,
+        title: problem.title,
+        difficulty: problem.difficulty
+      }
+    };
+  }
+
+  private problemCompaniesFor(problemId: string): ProblemCompanyTag[] {
+    return this.problemCompanies
+      .filter((item) => item.problemId === problemId)
+      .map((item) => {
+        const company = this.companies.find((candidate) => candidate.id === item.companyId);
+        if (!company) {
+          throw ApiError.notFound("Company not found");
+        }
+        return { ...item, company };
+      })
+      .sort((a, b) => b.frequency - a.frequency || a.company.name.localeCompare(b.company.name));
+  }
+
+  private ensureCompany(input: ProblemCompanyInput): Company {
+    if (input.companyId) {
+      const existing = this.companies.find((item) => item.id === input.companyId);
+      if (existing) return existing;
+      throw ApiError.notFound("Company not found");
+    }
+    if (!input.name) {
+      throw ApiError.badRequest("Company name is required");
+    }
+    const base = input.slug || input.name;
+    const slug = base
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/(^-|-$)/g, "");
+    let company = this.companies.find((item) => item.slug === slug);
+    const now = new Date();
+    if (!company) {
+      company = {
+        id: uuid(),
+        name: input.name,
+        slug,
+        createdAt: now,
+        updatedAt: now
+      };
+      this.companies.push(company);
+    }
+    return company;
+  }
+
+  private withLearningItems(collection: LearningCollection, userId?: string): LearningCollectionWithItems {
+    const items = this.learningCollectionItems
+      .filter((item) => item.collectionId === collection.id)
+      .sort((a, b) => a.order - b.order)
+      .map((item) => ({
+        ...item,
+        problem: this.problems.find((problem) => problem.id === item.problemId)
+          ? { ...this.requireProblem(item.problemId), companies: this.problemCompaniesFor(item.problemId) }
+          : undefined
+      }));
+    const progress = userId
+      ? this.learningProgress.find((item) => item.collectionId === collection.id && item.userId === userId) ?? null
+      : null;
+    return { ...collection, items, progress };
+  }
+
+  private withEditorialStructure(editorial: Editorial): Editorial {
+    return {
+      ...editorial,
+      sections: this.editorialSections
+        .filter((section) => section.editorialId === editorial.id)
+        .sort((a, b) => a.order - b.order),
+      officialSolutions: this.editorialOfficialSolutions
+        .filter((solution) => solution.editorialId === editorial.id)
+        .sort((a, b) => a.language.localeCompare(b.language))
+    };
+  }
+
+  private withPracticeProblems(session: PracticeSession): PracticeSessionWithProblems {
+    return {
+      ...session,
+      problems: this.practiceSessionProblems
+        .filter((item) => item.sessionId === session.id)
+        .sort((a, b) => a.order - b.order)
+        .map((item) => ({
+          ...item,
+          problem: this.problems.find((problem) => problem.id === item.problemId)
+            ? { ...this.requireProblem(item.problemId), companies: this.problemCompaniesFor(item.problemId) }
+            : undefined
+        }))
+    };
+  }
+
   // compare current rank against the latest snapshot for this user
   private withRankMovement(
     row: Omit<LeaderboardRow, "previousRank" | "rankMovement" | "rankMovementDirection">
@@ -1535,6 +2960,22 @@ export class MemoryRepository implements AppRepository {
   }
 
   // --- small require* helpers so call sites stay readable ---
+
+  private requireLearningCollection(id: string): LearningCollection {
+    const collection = this.learningCollections.find((item) => item.id === id);
+    if (!collection) {
+      throw ApiError.notFound("Learning collection not found");
+    }
+    return collection;
+  }
+
+  private requirePracticeSession(id: string): PracticeSession {
+    const session = this.practiceSessions.find((item) => item.id === id);
+    if (!session) {
+      throw ApiError.notFound("Practice session not found");
+    }
+    return session;
+  }
 
   private requireUser(id: string): User {
     const user = this.users.find((item) => item.id === id);
@@ -1600,6 +3041,14 @@ export class MemoryRepository implements AppRepository {
     return editorial;
   }
 
+  private requireSolution(id: string): Solution {
+    const solution = this.solutions.find((item) => item.id === id);
+    if (!solution) {
+      throw ApiError.notFound("Solution not found");
+    }
+    return solution;
+  }
+
   private requireProblemAsset(id: string): ProblemAsset {
     const asset = this.problemAssets.find((item) => item.id === id);
     if (!asset) {
@@ -1645,5 +3094,55 @@ export class MemoryRepository implements AppRepository {
       return "ENDED";
     }
     return "LIVE";
+  }
+
+  private ensureDefaultBadges(): void {
+    const defaults = [
+      {
+        key: "first-solve",
+        name: "First Solve",
+        description: "Solved the first problem.",
+        icon: "sparkles",
+        triggerType: "SOLVED_COUNT",
+        triggerValue: 1
+      },
+      {
+        key: "daily-challenge",
+        name: "Daily Challenger",
+        description: "Completed a daily challenge.",
+        icon: "calendar-check",
+        triggerType: "DAILY_CHALLENGE",
+        triggerValue: 1
+      },
+      {
+        key: "study-plan-complete",
+        name: "Study Plan Finisher",
+        description: "Completed a study plan.",
+        icon: "graduation-cap",
+        triggerType: "STUDY_PLAN_COMPLETE",
+        triggerValue: 1
+      },
+      {
+        key: "mock-interview-complete",
+        name: "Interview Ready",
+        description: "Completed a mock interview session.",
+        icon: "timer",
+        triggerType: "MOCK_INTERVIEW_COMPLETE",
+        triggerValue: 1
+      }
+    ];
+    for (const badge of defaults) {
+      if (!this.badgeDefinitions.some((item) => item.key === badge.key)) {
+        const now = new Date();
+        this.badgeDefinitions.push({
+          id: uuid(),
+          ...badge,
+          isActive: true,
+          createdById: null,
+          createdAt: now,
+          updatedAt: now
+        });
+      }
+    }
   }
 }

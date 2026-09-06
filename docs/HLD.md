@@ -191,7 +191,7 @@ For a real deployment:
 - Worker can scale separately based on queue size.
 - Redis-backed BullMQ should be used instead of in-memory queue.
 - PostgreSQL indexes support common lookups.
-- Live event bus should move to Redis pub/sub if API and worker run on different instances.
+- Live event bus uses Redis pub/sub in non-test Redis deployments so API and worker instances can be split.
 
 ## Current Limitations
 
@@ -199,13 +199,13 @@ For a real deployment:
 - No multi-file submissions.
 - Docker compose does not auto-run migrations.
 - Some frontend pages can still be split more.
-- Live events currently use in-memory bus for local mode.
+- Live events use the in-memory bus only for local/test mode.
 
 ## Future Ideas
 
 - Hosted demo.
 - Better mobile solve workspace.
-- Redis pub/sub event bus.
+- External alerting for production health and abuse signals.
 - More frontend tests.
 - Plagiarism checker.
 - Curated problem sheets.

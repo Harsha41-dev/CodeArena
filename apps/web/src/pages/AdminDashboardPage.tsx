@@ -1,12 +1,14 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Activity, FileCode2, ShieldCheck, Trophy, UsersRound } from "lucide-react";
-import { adminApi, problemsApi, submissionsApi } from "../services/api";
+import { adminApi, submissionsApi } from "../services/api";
 import { ErrorState } from "../components/State";
 import { StatsCard } from "../components/StatsCard";
 import { useAuthStore } from "../stores/authStore";
+import { AdminOpsSection } from "../features/admin/AdminOpsSection";
 import { ContestManagementSection } from "../features/admin/ContestManagementSection";
 import { CreateProblemSection } from "../features/admin/CreateProblemSection";
+import { LearningContentSection } from "../features/admin/LearningContentSection";
 import { MonitoringSidebar } from "../features/admin/MonitoringSidebar";
 import { TestGenerationPanel } from "../features/admin/TestGenerationPanel";
 import { UserManagementSection } from "../features/admin/UserManagementSection";
@@ -19,7 +21,7 @@ export function AdminDashboardPage() {
 
   const problems = useQuery({
     queryKey: ["admin-problems"],
-    queryFn: () => problemsApi.list({ limit: "100" }),
+    queryFn: () => adminApi.problems({ limit: "100" }),
     enabled: isAdmin
   });
 
@@ -37,7 +39,7 @@ export function AdminDashboardPage() {
 
   const submissions = useQuery({
     queryKey: ["admin-submissions"],
-    queryFn: submissionsApi.list,
+    queryFn: () => submissionsApi.list({ limit: "100" }),
     enabled: isAdmin
   });
 
@@ -48,6 +50,10 @@ export function AdminDashboardPage() {
   });
 
   const starterLanguages = activeStarterLanguages(adminLanguages.data ?? []);
+  const submissionItems = submissions.data ?? [];
+  const acceptedCount = submissionItems.filter((submission) => submission.status === "ACCEPTED").length;
+  const judgeErrorCount = submissionItems.filter((submission) => submission.status === "INTERNAL_ERROR").length;
+  const acceptedRate = submissionItems.length ? Math.round((acceptedCount / submissionItems.length) * 100) : 0;
 
   if (!isAdmin) {
     return (
@@ -77,20 +83,22 @@ export function AdminDashboardPage() {
             </span>
           ) : null}
         </div>
-        <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-6">
           <StatsCard
             icon={UsersRound}
             label="Total Users"
             value={users.data?.length ?? 0}
             hint="admin user management"
           />
-          <StatsCard icon={FileCode2} label="Problems" value={problems.data?.length ?? 0} hint="visible problem list" />
+          <StatsCard icon={FileCode2} label="Problems" value={problems.data?.length ?? 0} hint="all admin-visible content" />
           <StatsCard
             icon={Activity}
             label="Submissions"
-            value={submissions.data?.length ?? 0}
-            hint="visible to current admin context"
+            value={submissionItems.length}
+            hint="latest sampled submissions"
           />
+          <StatsCard icon={ShieldCheck} label="AC Rate" value={`${acceptedRate}%`} hint="accepted in admin sample" />
+          <StatsCard icon={Activity} label="Judge Errors" value={judgeErrorCount} hint="internal errors in sample" />
           <StatsCard icon={Trophy} label="Contests" value={contests.data?.length ?? 0} hint="contest catalog" />
         </div>
       </section>
@@ -107,9 +115,10 @@ export function AdminDashboardPage() {
         />
         <MonitoringSidebar
           problems={problems.data ?? []}
-          submissions={submissions.data ?? []}
+          submissions={submissionItems}
           contestCount={contests.data?.length ?? 0}
           userCount={users.data?.length ?? 0}
+          onToast={setToast}
         />
       </section>
 
@@ -121,6 +130,10 @@ export function AdminDashboardPage() {
         }}
         onToast={setToast}
       />
+
+      <AdminOpsSection contests={contests.data ?? []} onToast={setToast} />
+
+      <LearningContentSection problems={problems.data ?? []} onToast={setToast} />
 
       <section className="grid gap-5 xl:grid-cols-2">
         <UserManagementSection currentUserId={user?.id} onToast={setToast} />

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Database, Play, RefreshCw, Save } from "lucide-react";
-import { adminApi, problemsApi } from "../services/api";
+import { adminApi } from "../services/api";
 import type {
   CodeLanguage,
   CodeLanguageVersion,
@@ -47,7 +47,7 @@ export function AdminLanguagesPage() {
 
   const problems = useQuery({
     queryKey: ["admin-problems", "languages"],
-    queryFn: () => problemsApi.list({ limit: "100" }),
+    queryFn: () => adminApi.problems({ limit: "100" }),
     enabled: user?.role === "ADMIN"
   });
 

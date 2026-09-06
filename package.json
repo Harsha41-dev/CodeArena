@@ -24,9 +24,11 @@
     "judge0:local:connect:dev": "powershell -ExecutionPolicy Bypass -File scripts/connect-local-judge0.ps1 -StartDev",
     "db:generate": "npm run prisma:generate -w apps/api",
     "db:migrate": "npm run prisma:migrate -w apps/api",
+    "db:migrate:deploy": "npm run prisma:migrate:deploy -w apps/api",
     "db:seed": "npm run seed -w apps/api",
     "prisma:generate": "npm run prisma:generate -w apps/api",
     "prisma:migrate": "npm run prisma:migrate -w apps/api",
+    "prisma:migrate:deploy": "npm run prisma:migrate:deploy -w apps/api",
     "seed": "npm run seed -w apps/api",
     "leaderboard:snapshot": "npm run leaderboard:snapshot -w apps/api",
     "languages:sync:judge0": "npm run languages:sync:judge0 -w apps/api"

@@ -74,7 +74,7 @@ export function optionalAuthenticate(req: Request, _res: Response, next: NextFun
       };
     }
   } catch {
-    // bad/expired token — just treat as guest
+    // bad/expired token - just treat as guest
     req.user = undefined;
   }
 

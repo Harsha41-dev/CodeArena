@@ -29,13 +29,14 @@ export class SubmissionController {
     const userId = req.user!.id;
     const submission = await this.submissionService.submit(userId, req.body);
 
-    // only return id + status — frontend will poll/SSE for the rest
+    // only return id + status - frontend will poll/SSE for the rest
     sendSuccess(
       res,
       "Submission queued",
       {
         submissionId: submission.id,
-        status: submission.status
+        status: submission.status,
+        queuePosition: submission.queuePosition
       },
       undefined,
       201
@@ -145,5 +146,18 @@ export class SubmissionController {
       page: page.page,
       limit: page.limit
     });
+  };
+
+  rejudge = async (req: Request, res: Response): Promise<void> => {
+    const submission = await this.submissionService.rejudgeSubmission(req.params.id);
+    sendSuccess(res, "Submission queued for rejudge", {
+      submissionId: submission.id,
+      status: submission.status
+    });
+  };
+
+  rejudgeMany = async (req: Request, res: Response): Promise<void> => {
+    const result = await this.submissionService.rejudgeMany(req.body);
+    sendSuccess(res, "Submissions queued for rejudge", result);
   };
 }

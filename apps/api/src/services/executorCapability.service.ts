@@ -146,7 +146,7 @@ export class ExecutorCapabilityService {
     };
   }
 
-  // public health endpoint — throws if judge0 is configured but unreachable
+  // public health endpoint - throws if judge0 is configured but unreachable
   async publicHealth() {
     const executorType = currentExecutorType();
     const configuration = executorConfiguration(executorType);

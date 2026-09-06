@@ -1,9 +1,12 @@
+import { Link } from "react-router-dom";
+
 export function HeatmapCalendar({
-  activeDays = 0,
-  calendar = []
+  calendar = [],
+  linkActiveDays = false
 }: {
   activeDays?: number;
   calendar?: Array<{ date: string; count: number }>;
+  linkActiveDays?: boolean;
 }) {
   // map date string -> submission count
   const counts = new Map<string, number>();
@@ -15,26 +18,22 @@ export function HeatmapCalendar({
 
   const today = new Date();
   const totalDays = 126;
-  const days: number[] = [];
+  const days: Array<{ date: string; count: number }> = [];
 
   for (let index = 0; index < totalDays; index++) {
     const date = new Date(today);
     // go backwards so the last cell is today
     date.setDate(today.getDate() - (totalDays - 1 - index));
     const key = date.toISOString().slice(0, 10);
-    let count = counts.get(key) ?? 0;
+    const count = counts.get(key) ?? 0;
 
-    // if backend didn't send calendar data, fake some active days for demo
-    if (calendar.length === 0 && index < activeDays) {
-      count = 1;
-    }
-
-    days.push(count);
+    days.push({ date: key, count });
   }
 
   return (
     <div className="grid gap-1 overflow-x-auto" style={{ gridTemplateColumns: "repeat(18, minmax(0, 1fr))" }}>
-      {days.map((count, index) => {
+      {days.map((day) => {
+        const count = day.count;
         let intensity = 0;
         if (count >= 4) {
           intensity = 3;
@@ -53,7 +52,22 @@ export function HeatmapCalendar({
           cls = "bg-emerald-200 dark:bg-emerald-900";
         }
 
-        return <span key={index} className={`h-3 w-3 rounded-sm ${cls}`} title={`${count} submissions`} />;
+        const label = `${day.date}: ${count} submissions`;
+        const className = `inline-block h-3 w-3 rounded-sm ${cls}`;
+
+        if (linkActiveDays && count > 0) {
+          return (
+            <Link
+              key={day.date}
+              aria-label={label}
+              className={`${className} transition-shadow hover:ring-2 hover:ring-emerald-500 hover:ring-offset-1 dark:hover:ring-offset-slate-950`}
+              title={label}
+              to={`/submissions?dateFrom=${day.date}&dateTo=${day.date}`}
+            />
+          );
+        }
+
+        return <span key={day.date} className={className} title={label} />;
       })}
     </div>
   );

@@ -10,6 +10,7 @@ import { logger } from "./config/logger";
 import { ApiError } from "./errors/ApiError";
 import { swaggerDocument } from "./config/swagger";
 import { errorHandler } from "./middlewares/errorHandler";
+import { opsTelemetry } from "./middlewares/opsTelemetry";
 import type { QueueMetrics } from "./queue/SubmissionQueue";
 import { createApiRouter } from "./routes";
 
@@ -30,6 +31,7 @@ export function createApp(options: AppContextOptions = {}): express.Express {
     })
   );
   app.use(express.json({ limit: "1mb" }));
+  app.use(opsTelemetry(context));
 
   // looser limit in tests so suites don't trip 429s
   let rateLimitMax = 120;
@@ -68,7 +70,7 @@ export function createApp(options: AppContextOptions = {}): express.Express {
       try {
         queue = await context.queue.getMetrics();
       } catch {
-        // redis might be down — still return something useful
+        // redis might be down - still return something useful
         queueUnavailable = true;
         let driver: "bullmq" | "memory" = "memory";
         if (env.REDIS_URL) {
@@ -123,7 +125,7 @@ export function createApp(options: AppContextOptions = {}): express.Express {
   app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerDocument));
   app.use("/api/v1", createApiRouter(context));
 
-  // must be last — catches ApiError + unexpected stuff
+  // must be last - catches ApiError + unexpected stuff
   app.use(errorHandler);
 
   return app;

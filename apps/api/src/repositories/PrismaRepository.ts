@@ -1,24 +1,50 @@
 import { Prisma, PrismaClient } from "@prisma/client";
 import { ApiError } from "../errors/ApiError";
 import type {
+  AdminAuditLog,
+  ApiUsageEvent,
+  BadgeDefinition,
+  BackupRun,
   Bookmark,
+  Company,
   Contest,
+  ContestAnnouncement,
   ContestProblem,
+  ContestRatingJob,
   ContestRegistration,
   ContestSubmission,
+  DailyChallenge,
+  DailyChallengeCompletion,
+  Difficulty,
   Discussion,
+  DiscussionAcceptedAnswer,
   DiscussionComment,
+  DiscussionHelpfulVote,
   DiscussionVote,
   Editorial,
   GeneratedTestCaseBatch,
+  HealthCheckSnapshot,
+  LearningCollection,
+  LearningCollectionItem,
+  LearningCollectionProgress,
+  MonitoringAlert,
   Note,
+  Notification,
+  PracticeSession,
+  PracticeSessionProblem,
   Problem,
+  ProblemCompanyTag,
   ProblemAsset,
   ProblemAssetType,
   ProblemList,
   ProblemListItem,
   ProblemSolvedStatus,
+  ProblemStatus,
+  RatingEvent,
+  Report,
   RefreshTokenRecord,
+  Solution,
+  SolutionVote,
   Submission,
   SubmissionStatus,
   SubmissionTestCaseResult,
@@ -26,45 +52,104 @@ import type {
   TestCase,
   TestCaseGenerationJob,
   User,
-  UserRankSnapshot
+  UserFollow,
+  UserRankSnapshot,
+  UserRating
 } from "../types/domain";
 import type {
   AppRepository,
   ContestLeaderboardRow,
+  CreateApiUsageEventInput,
+  CreateAuditLogInput,
+  CreateBackupRunInput,
+  CreateHealthCheckSnapshotInput,
+  CreateLearningCollectionInput,
+  CreateNotificationInput,
+  CreatePracticeSessionInput,
   CreateProblemInput,
+  CreateRatingEventInput,
+  CreateReportInput,
+  CreateSolutionInput,
   CreateSubmissionInput,
   CreateSubmissionResultInput,
   CreateTestCaseInput,
   CreateUserInput,
+  DailyChallengeWithProblem,
+  DiscussionSort,
+  EditorialStructureInput,
   CreateGeneratedTestCaseBatchInput,
   CreateProblemAssetInput,
   CreateTestCaseGenerationJobInput,
   LeaderboardRow,
+  LearningCollectionItemInput,
+  LearningCollectionWithItems,
+  ListApiUsageEventsInput,
+  ListAuditLogsInput,
+  ListBackupRunsInput,
+  ListHealthCheckSnapshotsInput,
+  ListNotificationsInput,
+  ListRatingEventsInput,
+  ListReportsInput,
+  ListSolutionsInput,
   ListUsersInput,
   ListSubmissionsInput,
   ProblemFilters,
+  ProblemCompanyInput,
   ProblemLeaderboardRow,
+  PracticeSessionWithProblems,
+  SolutionWithRelations,
+  UpdateBackupRunInput,
+  UpdateLearningCollectionInput,
+  UpdatePracticeSessionInput,
+  UpdatePracticeSessionProblemInput,
+  UpdateReportInput,
+  UpdateSolutionInput,
   UpdateProblemInput,
   UpdateTestCaseInput,
   UpdateProblemAssetInput,
   UpdateTestCaseGenerationJobInput,
+  UpsertUserRatingInput,
+  UpsertDailyChallengeInput,
   UpdateUserInput,
+  UserBadgeWithDefinition,
   UserStats
 } from "./AppRepository";
 
 type PrismaProblemWithTags = Prisma.ProblemGetPayload<{
-  include: { problemTags: { include: { tag: true } } };
+  include: { problemTags: { include: { tag: true } }; companyTags: { include: { company: true } } };
 }>;
 
 type PrismaBookmarkWithProblem = Prisma.BookmarkGetPayload<{
-  include: { problem: { include: { problemTags: { include: { tag: true } } } } };
+  include: {
+    problem: { include: { problemTags: { include: { tag: true } }; companyTags: { include: { company: true } } } };
+  };
+}>;
+
+type PrismaPracticeSessionWithProblems = Prisma.PracticeSessionGetPayload<{
+  include: {
+    problems: {
+      include: {
+        problem: { include: { problemTags: { include: { tag: true } }; companyTags: { include: { company: true } } } };
+      };
+    };
+  };
 }>;
 
 type PrismaDiscussionWithRelations = Prisma.DiscussionGetPayload<{
-  include: { comments: true; author: true };
+  include: { comments: true; author: true; acceptedAnswer: true };
 }>;
 
-// real DB-backed repository — same interface as MemoryRepository
+// real DB-backed repository - same interface as MemoryRepository
+function emptyProblemStats() {
+  return {
+    totalSubmissions: 0,
+    acceptedSubmissions: 0,
+    solvedCount: 0,
+    acceptanceRate: 0,
+    frequency: 0
+  };
+}
+
 export class PrismaRepository implements AppRepository {
   constructor(private readonly prisma = new PrismaClient()) {}
 
@@ -136,7 +221,7 @@ export class PrismaRepository implements AppRepository {
       ];
     }
 
-    // no pagination → return full list
+    // no pagination - return full list
     if (!input) {
       const all = await this.prisma.user.findMany({
         where,
@@ -184,38 +269,72 @@ export class PrismaRepository implements AppRepository {
   }
 
   async listProblems(filters: ProblemFilters) {
-    const where: Prisma.ProblemWhereInput = {
-      visibility: "PUBLIC",
-      ...(filters.difficulty ? { difficulty: filters.difficulty } : {}),
-      ...(filters.search
-        ? {
-            OR: [
-              { title: { contains: filters.search, mode: "insensitive" } },
-              { slug: { contains: filters.search, mode: "insensitive" } }
-            ]
-          }
-        : {}),
-      ...(filters.tag
-        ? {
+    const tagFilter = filters.tag ?? filters.topic;
+    const visibilityWhere: Prisma.ProblemWhereInput = filters.includeNonPublic
+      ? filters.visibility
+        ? { visibility: filters.visibility }
+        : {}
+      : { visibility: "PUBLIC" };
+    const and: Prisma.ProblemWhereInput[] = [];
+    if (filters.search) {
+      and.push({
+        OR: [
+          { title: { contains: filters.search, mode: "insensitive" } },
+          { slug: { contains: filters.search, mode: "insensitive" } }
+        ]
+      });
+    }
+    if (filters.company) {
+      and.push({
+        OR: [
+          {
+            companyTags: {
+              some: {
+                company: {
+                  OR: [{ slug: filters.company }, { name: { equals: filters.company, mode: "insensitive" } }]
+                }
+              }
+            }
+          },
+          {
             problemTags: {
               some: {
                 tag: {
-                  OR: [{ slug: filters.tag }, { name: { equals: filters.tag, mode: "insensitive" } }]
+                  OR: [{ slug: filters.company }, { name: { equals: filters.company, mode: "insensitive" } }]
                 }
               }
             }
           }
-        : {})
+        ]
+      });
+    }
+    if (tagFilter) {
+      and.push({
+        problemTags: {
+          some: {
+            tag: {
+              OR: [{ slug: tagFilter }, { name: { equals: tagFilter, mode: "insensitive" } }]
+            }
+          }
+        }
+      });
+    }
+    const where: Prisma.ProblemWhereInput = {
+      ...visibilityWhere,
+      ...(filters.difficulty ? { difficulty: filters.difficulty } : {}),
+      ...(and.length ? { AND: and } : {})
     };
 
     const all = await this.prisma.problem.findMany({
       where,
-      include: { problemTags: { include: { tag: true } } },
+      include: { problemTags: { include: { tag: true } }, companyTags: { include: { company: true } } },
       orderBy: { createdAt: "desc" }
     });
-    const statuses = filters.userId
-      ? await this.prisma.problemSolvedStatus.findMany({ where: { userId: filters.userId } })
-      : [];
+    const problemIds = all.map((problem) => problem.id);
+    const [statuses, statsByProblem] = await Promise.all([
+      filters.userId ? this.prisma.problemSolvedStatus.findMany({ where: { userId: filters.userId } }) : [],
+      this.problemStatsById(problemIds)
+    ]);
     const statusByProblem = new Map(
       statuses.map(
         (status) =>
@@ -224,13 +343,15 @@ export class PrismaRepository implements AppRepository {
     );
     const enriched = all.map((problem) => ({
       ...this.mapProblem(problem),
-      status: statusByProblem.get(problem.id) ?? "NOT_ATTEMPTED"
+      status: statusByProblem.get(problem.id) ?? "NOT_ATTEMPTED",
+      ...(statsByProblem.get(problem.id) ?? emptyProblemStats())
     }));
     const filtered = filters.status ? enriched.filter((problem) => problem.status === filters.status) : enriched;
+    const sorted = this.sortProblems(filtered, filters.sort ?? "newest");
     const start = (filters.page - 1) * filters.limit;
     return {
-      items: filtered.slice(start, start + filters.limit),
-      total: filtered.length,
+      items: sorted.slice(start, start + filters.limit),
+      total: sorted.length,
       page: filters.page,
       limit: filters.limit
     };
@@ -239,7 +360,7 @@ export class PrismaRepository implements AppRepository {
   async findProblemBySlug(slug: string): Promise<Problem | null> {
     const problem = await this.prisma.problem.findUnique({
       where: { slug },
-      include: { problemTags: { include: { tag: true } } }
+      include: { problemTags: { include: { tag: true } }, companyTags: { include: { company: true } } }
     });
     return problem ? this.mapProblem(problem) : null;
   }
@@ -247,7 +368,7 @@ export class PrismaRepository implements AppRepository {
   async findProblemById(id: string): Promise<Problem | null> {
     const problem = await this.prisma.problem.findUnique({
       where: { id },
-      include: { problemTags: { include: { tag: true } } }
+      include: { problemTags: { include: { tag: true } }, companyTags: { include: { company: true } } }
     });
     return problem ? this.mapProblem(problem) : null;
   }
@@ -271,35 +392,44 @@ export class PrismaRepository implements AppRepository {
         createdById: input.createdById,
         problemTags: { create: tags.map((tag) => ({ tagId: tag.id })) }
       },
-      include: { problemTags: { include: { tag: true } } }
+      include: { problemTags: { include: { tag: true } }, companyTags: { include: { company: true } } }
     });
+    if (input.companies) {
+      await this.setProblemCompanies(problem.id, input.companies);
+      return (await this.findProblemById(problem.id)) ?? this.mapProblem(problem);
+    }
     return this.mapProblem(problem);
   }
 
   async updateProblem(id: string, input: UpdateProblemInput): Promise<Problem> {
     const tags = input.tags ? await Promise.all(input.tags.map((name) => this.upsertTag(name))) : null;
+    const { companies, ...patch } = input;
     if (tags) {
       await this.prisma.problemTag.deleteMany({ where: { problemId: id } });
     }
     const problem = await this.prisma.problem.update({
       where: { id },
       data: {
-        slug: input.slug,
-        title: input.title,
-        difficulty: input.difficulty,
-        description: input.description,
-        constraints: input.constraints,
-        inputFormat: input.inputFormat,
-        outputFormat: input.outputFormat,
-        starterCode: input.starterCode as unknown as Prisma.InputJsonValue | undefined,
-        visibility: input.visibility,
-        checkerMode: input.checkerMode,
-        timeLimitMs: input.timeLimitMs,
-        memoryLimitMb: input.memoryLimitMb,
+        slug: patch.slug,
+        title: patch.title,
+        difficulty: patch.difficulty,
+        description: patch.description,
+        constraints: patch.constraints,
+        inputFormat: patch.inputFormat,
+        outputFormat: patch.outputFormat,
+        starterCode: patch.starterCode as unknown as Prisma.InputJsonValue | undefined,
+        visibility: patch.visibility,
+        checkerMode: patch.checkerMode,
+        timeLimitMs: patch.timeLimitMs,
+        memoryLimitMb: patch.memoryLimitMb,
         ...(tags ? { problemTags: { create: tags.map((tag) => ({ tagId: tag.id })) } } : {})
       },
-      include: { problemTags: { include: { tag: true } } }
+      include: { problemTags: { include: { tag: true } }, companyTags: { include: { company: true } } }
     });
+    if (companies) {
+      await this.setProblemCompanies(id, companies);
+      return (await this.findProblemById(id)) ?? this.mapProblem(problem);
+    }
     return this.mapProblem(problem);
   }
 
@@ -309,6 +439,314 @@ export class PrismaRepository implements AppRepository {
 
   async listTags(): Promise<Tag[]> {
     return this.prisma.tag.findMany({ orderBy: { name: "asc" } }) as Promise<Tag[]>;
+  }
+
+  async listCompanies(): Promise<Company[]> {
+    const db = this.prisma;
+    return db.company.findMany({ orderBy: { name: "asc" } }) as Promise<Company[]>;
+  }
+
+  async setProblemCompanies(problemId: string, companies: ProblemCompanyInput[]): Promise<ProblemCompanyTag[]> {
+    const db = this.prisma;
+    await this.prisma.problem.findUniqueOrThrow({ where: { id: problemId } });
+    await db.problemCompany.deleteMany({ where: { problemId } });
+    for (const input of companies) {
+      const company = await this.ensureCompany(input);
+      await db.problemCompany.create({
+        data: {
+          problemId,
+          companyId: company.id,
+          frequency: input.frequency ?? 0,
+          isFeatured: input.isFeatured ?? false
+        }
+      });
+    }
+    return this.problemCompaniesFor(problemId);
+  }
+
+  async listLearningCollections(input: {
+    type: LearningCollection["type"];
+    page: number;
+    limit: number;
+    includeNonPublic?: boolean;
+    userId?: string;
+  }): Promise<{ items: LearningCollectionWithItems[]; total: number; page: number; limit: number }> {
+    const db = this.prisma;
+    const where: Prisma.LearningCollectionWhereInput = {
+      type: input.type,
+      ...(input.includeNonPublic ? {} : { visibility: "PUBLIC" as const })
+    };
+    const [collections, total] = await Promise.all([
+      db.learningCollection.findMany({
+        where,
+        skip: (input.page - 1) * input.limit,
+        take: input.limit,
+        orderBy: [{ title: "asc" }]
+      }) as Promise<LearningCollection[]>,
+      db.learningCollection.count({ where }) as Promise<number>
+    ]);
+    const items = await Promise.all(
+      collections.map((collection) => this.mapLearningCollection(collection, input.userId))
+    );
+    return { items, total, page: input.page, limit: input.limit };
+  }
+
+  async findLearningCollectionBySlug(input: {
+    type: LearningCollection["type"];
+    slug: string;
+    includeNonPublic?: boolean;
+    userId?: string;
+  }): Promise<LearningCollectionWithItems | null> {
+    const db = this.prisma;
+    const collection = (await db.learningCollection.findUnique({
+      where: { type_slug: { type: input.type, slug: input.slug } }
+    })) as LearningCollection | null;
+    if (!collection) return null;
+    if (!input.includeNonPublic && collection.visibility !== "PUBLIC") return null;
+    return this.mapLearningCollection(collection, input.userId);
+  }
+
+  async createLearningCollection(input: CreateLearningCollectionInput): Promise<LearningCollection> {
+    const db = this.prisma;
+    return db.learningCollection.create({
+      data: {
+        type: input.type,
+        slug: input.slug,
+        title: input.title,
+        description: input.description,
+        badge: input.badge,
+        dailyUnlockCount: input.dailyUnlockCount ?? 0,
+        visibility: input.visibility ?? "PUBLIC",
+        createdById: input.createdById
+      }
+    }) as Promise<LearningCollection>;
+  }
+
+  async updateLearningCollection(id: string, input: UpdateLearningCollectionInput): Promise<LearningCollection> {
+    const db = this.prisma;
+    return db.learningCollection.update({ where: { id }, data: input }) as Promise<LearningCollection>;
+  }
+
+  async deleteLearningCollection(id: string): Promise<void> {
+    const db = this.prisma;
+    await db.learningCollection.delete({ where: { id } });
+  }
+
+  async setLearningCollectionItems(
+    collectionId: string,
+    items: LearningCollectionItemInput[]
+  ): Promise<LearningCollectionItem[]> {
+    const db = this.prisma;
+    await db.learningCollection.findUniqueOrThrow({ where: { id: collectionId } });
+    await db.learningCollectionItem.deleteMany({ where: { collectionId } });
+    for (let index = 0; index < items.length; index += 1) {
+      const item = items[index];
+      await db.learningCollectionItem.create({
+        data: {
+          collectionId,
+          problemId: item.problemId,
+          order: item.order ?? index,
+          note: item.note
+        }
+      });
+    }
+    return db.learningCollectionItem.findMany({
+      where: { collectionId },
+      orderBy: { order: "asc" }
+    }) as Promise<LearningCollectionItem[]>;
+  }
+
+  async upsertLearningProgress(input: {
+    collectionId: string;
+    userId: string;
+    unlockedCount: number;
+    completedCount: number;
+    completedAt?: Date | null;
+  }): Promise<LearningCollectionProgress> {
+    const db = this.prisma;
+    return db.learningCollectionProgress.upsert({
+      where: { collectionId_userId: { collectionId: input.collectionId, userId: input.userId } },
+      update: {
+        lastViewedAt: new Date(),
+        unlockedCount: input.unlockedCount,
+        completedCount: input.completedCount,
+        completedAt: input.completedAt
+      },
+      create: {
+        collectionId: input.collectionId,
+        userId: input.userId,
+        unlockedCount: input.unlockedCount,
+        completedCount: input.completedCount,
+        completedAt: input.completedAt
+      }
+    }) as Promise<LearningCollectionProgress>;
+  }
+
+  async findDailyChallengeByDate(date: Date, userId?: string): Promise<DailyChallengeWithProblem | null> {
+    const db = this.prisma;
+    const challenge = (await db.dailyChallenge.findUnique({
+      where: { date: this.normalizedDay(date) },
+      include: { problem: { include: { problemTags: { include: { tag: true } }, companyTags: { include: { company: true } } } } }
+    })) as (DailyChallenge & { problem?: PrismaProblemWithTags }) | null;
+    if (!challenge) return null;
+    const completion = userId
+      ? ((await db.dailyChallengeCompletion.findUnique({
+          where: { challengeId_userId: { challengeId: challenge.id, userId } }
+        })) as DailyChallengeCompletion | null)
+      : null;
+    return this.mapDailyChallenge(challenge, completion);
+  }
+
+  async upsertDailyChallenge(input: UpsertDailyChallengeInput): Promise<DailyChallenge> {
+    const db = this.prisma;
+    return db.dailyChallenge.upsert({
+      where: { date: this.normalizedDay(input.date) },
+      update: {
+        problemId: input.problemId,
+        assignedById: input.assignedById,
+        rewardXp: input.rewardXp
+      },
+      create: {
+        date: this.normalizedDay(input.date),
+        problemId: input.problemId,
+        assignedById: input.assignedById,
+        rewardXp: input.rewardXp ?? 10
+      }
+    }) as Promise<DailyChallenge>;
+  }
+
+  async listDailyChallenges(input: { page: number; limit: number }): Promise<{ items: DailyChallengeWithProblem[]; total: number; page: number; limit: number }> {
+    const db = this.prisma;
+    const [challenges, total] = await Promise.all([
+      db.dailyChallenge.findMany({
+        skip: (input.page - 1) * input.limit,
+        take: input.limit,
+        include: { problem: { include: { problemTags: { include: { tag: true } }, companyTags: { include: { company: true } } } } },
+        orderBy: { date: "desc" }
+      }) as Promise<Array<DailyChallenge & { problem?: PrismaProblemWithTags }>>,
+      db.dailyChallenge.count() as Promise<number>
+    ]);
+    return { items: challenges.map((challenge) => this.mapDailyChallenge(challenge)), total, page: input.page, limit: input.limit };
+  }
+
+  async completeDailyChallengeForProblem(input: {
+    userId: string;
+    problemId: string;
+    submissionId?: string | null;
+    completedAt?: Date;
+  }): Promise<DailyChallengeCompletion | null> {
+    const db = this.prisma;
+    const completedAt = input.completedAt ?? new Date();
+    const challenge = (await db.dailyChallenge.findFirst({
+      where: { problemId: input.problemId, date: this.normalizedDay(completedAt) }
+    })) as DailyChallenge | null;
+    if (!challenge) return null;
+    return db.dailyChallengeCompletion.upsert({
+      where: { challengeId_userId: { challengeId: challenge.id, userId: input.userId } },
+      update: {},
+      create: {
+        challengeId: challenge.id,
+        userId: input.userId,
+        problemId: input.problemId,
+        submissionId: input.submissionId,
+        completedAt,
+        xpAwarded: challenge.rewardXp
+      }
+    }) as Promise<DailyChallengeCompletion>;
+  }
+
+  async listDailyChallengeCompletions(userId: string): Promise<DailyChallengeCompletion[]> {
+    const db = this.prisma;
+    return db.dailyChallengeCompletion.findMany({
+      where: { userId },
+      orderBy: { completedAt: "desc" }
+    }) as Promise<DailyChallengeCompletion[]>;
+  }
+
+  async listBadgeDefinitions(includeInactive = false): Promise<BadgeDefinition[]> {
+    await this.ensureDefaultBadges();
+    const db = this.prisma;
+    return db.badgeDefinition.findMany({
+      where: includeInactive ? {} : { isActive: true },
+      orderBy: { name: "asc" }
+    }) as Promise<BadgeDefinition[]>;
+  }
+
+  async createBadgeDefinition(input: {
+    key: string;
+    name: string;
+    description: string;
+    icon?: string | null;
+    triggerType: string;
+    triggerValue?: number;
+    isActive?: boolean;
+    createdById?: string | null;
+  }): Promise<BadgeDefinition> {
+    const db = this.prisma;
+    return db.badgeDefinition.create({
+      data: {
+        key: input.key,
+        name: input.name,
+        description: input.description,
+        icon: input.icon,
+        triggerType: input.triggerType,
+        triggerValue: input.triggerValue ?? 1,
+        isActive: input.isActive ?? true,
+        createdById: input.createdById
+      }
+    }) as Promise<BadgeDefinition>;
+  }
+
+  async updateBadgeDefinition(
+    id: string,
+    input: Partial<Pick<BadgeDefinition, "name" | "description" | "icon" | "triggerType" | "triggerValue" | "isActive">>
+  ): Promise<BadgeDefinition> {
+    const db = this.prisma;
+    return db.badgeDefinition.update({ where: { id }, data: input }) as Promise<BadgeDefinition>;
+  }
+
+  async awardBadge(input: {
+    userId: string;
+    badgeKey: string;
+    sourceType?: string | null;
+    sourceId?: string | null;
+  }): Promise<UserBadgeWithDefinition | null> {
+    await this.ensureDefaultBadges();
+    const db = this.prisma;
+    const badge = (await db.badgeDefinition.findFirst({
+      where: { key: input.badgeKey, isActive: true }
+    })) as BadgeDefinition | null;
+    if (!badge) return null;
+    const sourceType = input.sourceType ?? null;
+    const sourceId = input.sourceId ?? null;
+    const existing = (await db.userBadge.findFirst({
+      where: {
+        userId: input.userId,
+        badgeId: badge.id,
+        ...(sourceType ? { sourceType, sourceId } : {})
+      },
+      include: { badge: true }
+    })) as UserBadgeWithDefinition | null;
+    if (existing) return existing;
+    return db.userBadge.create({
+      data: {
+        userId: input.userId,
+        badgeId: badge.id,
+        sourceType,
+        sourceId
+      },
+      include: { badge: true }
+    }) as Promise<UserBadgeWithDefinition>;
+  }
+
+  async listUserBadges(userId: string): Promise<UserBadgeWithDefinition[]> {
+    await this.ensureDefaultBadges();
+    const db = this.prisma;
+    return db.userBadge.findMany({
+      where: { userId },
+      include: { badge: true },
+      orderBy: { awardedAt: "desc" }
+    }) as Promise<UserBadgeWithDefinition[]>;
   }
 
   async listTestCases(problemId: string, samplesOnly = false): Promise<TestCase[]> {
@@ -470,6 +908,22 @@ export class PrismaRepository implements AppRepository {
       problemId: input.problemId,
       status: input.status
     };
+
+    if (input.language) {
+      where.OR = [
+        { languageKeySnapshot: { equals: input.language, mode: "insensitive" } },
+        { languageNameSnapshot: { contains: input.language, mode: "insensitive" } },
+        { languageVersionSnapshot: { contains: input.language, mode: "insensitive" } }
+      ];
+    }
+
+    if (input.dateFrom || input.dateTo) {
+      where.createdAt = {
+        ...(input.dateFrom ? { gte: input.dateFrom } : {}),
+        ...(input.dateTo ? { lte: input.dateTo } : {})
+      };
+    }
+
     const [items, total] = await Promise.all([
       this.prisma.submission.findMany({
         where,
@@ -527,6 +981,12 @@ export class PrismaRepository implements AppRepository {
         lastSubmittedAt: new Date()
       }
     }) as Promise<ProblemSolvedStatus>;
+  }
+
+  async getProblemSolvedStatus(userId: string, problemId: string): Promise<ProblemSolvedStatus | null> {
+    return this.prisma.problemSolvedStatus.findUnique({
+      where: { userId_problemId: { userId, problemId } }
+    }) as Promise<ProblemSolvedStatus | null>;
   }
 
   async getUserStats(userId: string): Promise<UserStats> {
@@ -589,6 +1049,10 @@ export class PrismaRepository implements AppRepository {
     createdById?: string | null;
     problemIds: string[];
     visibility?: "PUBLIC" | "PRIVATE" | "ARCHIVED";
+    freezeStartsAt?: Date | null;
+    isRated?: boolean;
+    ratingSeason?: string | null;
+    ratingScheduledAt?: Date | null;
   }): Promise<Contest> {
     const now = Date.now();
     const status = now < input.startTime.getTime() ? "UPCOMING" : now > input.endTime.getTime() ? "ENDED" : "LIVE";
@@ -602,6 +1066,10 @@ export class PrismaRepository implements AppRepository {
         createdById: input.createdById,
         status,
         visibility: input.visibility ?? "PUBLIC",
+        freezeStartsAt: input.freezeStartsAt,
+        isRated: input.isRated ?? true,
+        ratingSeason: input.ratingSeason,
+        ratingScheduledAt: input.ratingScheduledAt,
         problems: {
           create: input.problemIds.map((problemId, index) => ({
             problemId,
@@ -615,7 +1083,23 @@ export class PrismaRepository implements AppRepository {
 
   async updateContest(
     id: string,
-    input: Partial<Pick<Contest, "title" | "slug" | "description" | "startTime" | "endTime" | "status" | "visibility">>
+    input: Partial<
+      Pick<
+        Contest,
+        | "title"
+        | "slug"
+        | "description"
+        | "startTime"
+        | "endTime"
+        | "status"
+        | "visibility"
+        | "freezeStartsAt"
+        | "isRated"
+        | "ratingSeason"
+        | "ratingScheduledAt"
+        | "ratingsPublishedAt"
+      >
+    >
   ): Promise<Contest & { problems: ContestProblem[] }> {
     const contest = await this.prisma.contest.update({
       where: { id },
@@ -744,9 +1228,9 @@ export class PrismaRepository implements AppRepository {
     return rows;
   }
 
-  async getContestLeaderboard(contestId: string): Promise<ContestLeaderboardRow[]> {
+  async getContestLeaderboard(contestId: string, options: { before?: Date } = {}): Promise<ContestLeaderboardRow[]> {
     const submissions = await this.prisma.contestSubmission.findMany({
-      where: { contestId },
+      where: { contestId, ...(options.before ? { submittedAt: { lte: options.before } } : {}) },
       include: { user: true },
       orderBy: { submittedAt: "asc" }
     });
@@ -775,9 +1259,12 @@ export class PrismaRepository implements AppRepository {
   }
 
   async getEditorial(problemId: string, includeDraft = false): Promise<Editorial | null> {
-    return this.prisma.editorial.findFirst({
-      where: { problemId, ...(includeDraft ? {} : { isPublished: true }) }
-    }) as Promise<Editorial | null>;
+    const db = this.prisma;
+    const editorial = (await db.editorial.findFirst({
+      where: { problemId, ...(includeDraft ? {} : { isPublished: true }) },
+      include: { sections: { orderBy: { order: "asc" } }, officialSolutions: { orderBy: { order: "asc" } } }
+    })) as Editorial | null;
+    return editorial;
   }
 
   async upsertEditorial(input: {
@@ -786,9 +1273,11 @@ export class PrismaRepository implements AppRepository {
     title: string;
     content: string;
     isPublished?: boolean;
+    structure?: EditorialStructureInput;
   }): Promise<Editorial> {
+    const db = this.prisma;
     const now = new Date();
-    return this.prisma.editorial.upsert({
+    const editorial = (await db.editorial.upsert({
       where: { problemId: input.problemId },
       update: {
         title: input.title,
@@ -804,8 +1293,13 @@ export class PrismaRepository implements AppRepository {
         content: input.content,
         isPublished: input.isPublished ?? false,
         publishedAt: input.isPublished ? now : null
-      }
-    }) as Promise<Editorial>;
+      },
+      include: { sections: { orderBy: { order: "asc" } }, officialSolutions: { orderBy: { order: "asc" } } }
+    })) as Editorial;
+    if (input.structure) {
+      return this.setEditorialStructure(editorial.id, input.structure);
+    }
+    return editorial;
   }
 
   async updateEditorial(id: string, input: { title?: string; content?: string }): Promise<Editorial> {
@@ -817,9 +1311,54 @@ export class PrismaRepository implements AppRepository {
   }
 
   async setEditorialPublished(id: string, isPublished: boolean): Promise<Editorial> {
-    return this.prisma.editorial.update({
+    const db = this.prisma;
+    return db.editorial.update({
       where: { id },
-      data: { isPublished, publishedAt: isPublished ? new Date() : null }
+      data: { isPublished, publishedAt: isPublished ? new Date() : null },
+      include: { sections: { orderBy: { order: "asc" } }, officialSolutions: { orderBy: { order: "asc" } } }
+    }) as Promise<Editorial>;
+  }
+
+  async setEditorialStructure(editorialId: string, input: EditorialStructureInput): Promise<Editorial> {
+    const db = this.prisma;
+    await db.editorial.findUniqueOrThrow({ where: { id: editorialId } });
+    await this.prisma.$transaction([
+      db.editorialSection.deleteMany({ where: { editorialId } }),
+      db.editorialOfficialSolution.deleteMany({ where: { editorialId } })
+    ]);
+    for (let index = 0; index < (input.sections ?? []).length; index += 1) {
+      const section = input.sections?.[index];
+      if (!section) continue;
+      await db.editorialSection.create({
+        data: {
+          editorialId,
+          type: section.type ?? "TEXT",
+          title: section.title,
+          content: section.content,
+          language: section.language,
+          order: section.order ?? index,
+          isLocked: section.isLocked ?? false
+        }
+      });
+    }
+    for (let index = 0; index < (input.officialSolutions ?? []).length; index += 1) {
+      const solution = input.officialSolutions?.[index];
+      if (!solution) continue;
+      await db.editorialOfficialSolution.create({
+        data: {
+          editorialId,
+          language: solution.language,
+          code: solution.code,
+          explanation: solution.explanation,
+          timeComplexity: solution.timeComplexity,
+          spaceComplexity: solution.spaceComplexity,
+          order: solution.order ?? index
+        }
+      });
+    }
+    return db.editorial.findUnique({
+      where: { id: editorialId },
+      include: { sections: { orderBy: { order: "asc" } }, officialSolutions: { orderBy: { order: "asc" } } }
     }) as Promise<Editorial>;
   }
 
@@ -829,6 +1368,7 @@ export class PrismaRepository implements AppRepository {
     page: number;
     limit: number;
     search?: string;
+    sort?: DiscussionSort;
   }) {
     const where: Prisma.DiscussionWhereInput = {
       ...(input.problemId !== undefined ? { problemId: input.problemId } : {}),
@@ -844,13 +1384,21 @@ export class PrismaRepository implements AppRepository {
           }
         : {})
     };
+
+    if (input.sort === "unanswered") {
+      where.comments = { none: {} };
+    }
+
+    const orderBy: Prisma.DiscussionOrderByWithRelationInput[] =
+      input.sort === "top" ? [{ upvotes: "desc" }, { createdAt: "desc" }] : [{ createdAt: "desc" }];
+
     const [items, total] = await Promise.all([
       this.prisma.discussion.findMany({
         where,
-        include: { comments: true, author: true },
+        include: { comments: true, author: true, acceptedAnswer: true },
         skip: (input.page - 1) * input.limit,
         take: input.limit,
-        orderBy: { createdAt: "desc" }
+        orderBy
       }) as Promise<PrismaDiscussionWithRelations[]>,
       this.prisma.discussion.count({ where })
     ]);
@@ -865,7 +1413,7 @@ export class PrismaRepository implements AppRepository {
   async findDiscussionById(id: string) {
     const discussion = await this.prisma.discussion.findUnique({
       where: { id },
-      include: { comments: true, author: true }
+      include: { comments: true, author: true, acceptedAnswer: true }
     });
     return discussion ? this.mapDiscussion(discussion) : null;
   }
@@ -879,6 +1427,11 @@ export class PrismaRepository implements AppRepository {
     tags?: string[];
   }): Promise<Discussion> {
     return this.prisma.discussion.create({ data: input }) as Promise<Discussion>;
+  }
+
+  async findDiscussionCommentById(id: string): Promise<DiscussionComment | null> {
+    const comment = await this.prisma.discussionComment.findUnique({ where: { id } });
+    return comment as DiscussionComment | null;
   }
 
   async addDiscussionComment(input: {
@@ -943,10 +1496,720 @@ export class PrismaRepository implements AppRepository {
     return vote as DiscussionVote;
   }
 
+  async hasDiscussionCommentHelpfulVote(commentId: string, userId: string): Promise<boolean> {
+    const db = this.prisma;
+    const count = (await db.discussionHelpfulVote.count({ where: { commentId, userId } })) as number;
+    return count > 0;
+  }
+
+  async voteDiscussionCommentHelpful(commentId: string, userId: string): Promise<DiscussionHelpfulVote> {
+    const db = this.prisma;
+    const vote = (await db.discussionHelpfulVote.upsert({
+      where: { commentId_userId: { commentId, userId } },
+      update: {},
+      create: { commentId, userId }
+    })) as DiscussionHelpfulVote;
+    const helpfulVotes = (await db.discussionHelpfulVote.count({ where: { commentId } })) as number;
+    await db.discussionComment.update({ where: { id: commentId }, data: { helpfulVotes } });
+    return vote;
+  }
+
+  async unvoteDiscussionCommentHelpful(commentId: string, userId: string): Promise<void> {
+    const db = this.prisma;
+    await db.discussionHelpfulVote.deleteMany({ where: { commentId, userId } });
+    const helpfulVotes = (await db.discussionHelpfulVote.count({ where: { commentId } })) as number;
+    await db.discussionComment.update({ where: { id: commentId }, data: { helpfulVotes } });
+  }
+
+  async acceptDiscussionAnswer(
+    discussionId: string,
+    commentId: string,
+    actorId: string
+  ): Promise<DiscussionAcceptedAnswer> {
+    const db = this.prisma;
+    const [discussion, comment, actor] = await Promise.all([
+      db.discussion.findUnique({ where: { id: discussionId } }) as Promise<Discussion | null>,
+      db.discussionComment.findUnique({ where: { id: commentId } }) as Promise<DiscussionComment | null>,
+      this.prisma.user.findUnique({ where: { id: actorId } }) as Promise<User | null>
+    ]);
+    if (!discussion) throw ApiError.notFound("Discussion not found");
+    if (!comment || comment.discussionId !== discussionId) throw ApiError.notFound("Discussion comment not found");
+    if (!actor) throw ApiError.notFound("User not found");
+    if (discussion.authorId !== actorId && actor.role !== "ADMIN") {
+      throw ApiError.forbidden("Only the discussion author or an admin can accept an answer");
+    }
+    return db.discussionAcceptedAnswer.upsert({
+      where: { discussionId },
+      update: { commentId, acceptedById: actorId },
+      create: { discussionId, commentId, acceptedById: actorId }
+    }) as Promise<DiscussionAcceptedAnswer>;
+  }
+
+  async listSolutions(input: ListSolutionsInput) {
+    const db = this.prisma;
+    const where: Record<string, unknown> = {
+      ...(input.problemId ? { problemId: input.problemId } : {}),
+      ...(input.authorId ? { authorId: input.authorId } : {})
+    };
+    if (!input.includePrivate) {
+      where.OR = input.viewerId
+        ? [{ visibility: "PUBLIC" }, { authorId: input.viewerId }]
+        : [{ visibility: "PUBLIC" }];
+    }
+    const [items, total] = await Promise.all([
+      db.solution.findMany({
+        where,
+        skip: (input.page - 1) * input.limit,
+        take: input.limit,
+        orderBy: [{ isPinned: "desc" }, { createdAt: "desc" }]
+      }) as Promise<Solution[]>,
+      db.solution.count({ where }) as Promise<number>
+    ]);
+    return {
+      items: await Promise.all(items.map((solution) => this.mapSolution(solution))),
+      total,
+      page: input.page,
+      limit: input.limit
+    };
+  }
+
+  async findSolutionById(id: string): Promise<SolutionWithRelations | null> {
+    const db = this.prisma;
+    const solution = (await db.solution.findUnique({ where: { id } })) as Solution | null;
+    return solution ? this.mapSolution(solution) : null;
+  }
+
+  async createSolution(input: CreateSolutionInput): Promise<Solution> {
+    const db = this.prisma;
+    return db.solution.create({
+      data: {
+        problemId: input.problemId,
+        authorId: input.authorId,
+        submissionId: input.submissionId,
+        title: input.title,
+        content: input.content,
+        code: input.code,
+        language: input.language,
+        timeComplexity: input.timeComplexity,
+        spaceComplexity: input.spaceComplexity,
+        visibility: input.visibility ?? "PUBLIC",
+        isPinned: input.isPinned ?? false
+      }
+    }) as Promise<Solution>;
+  }
+
+  async updateSolution(id: string, input: UpdateSolutionInput): Promise<Solution> {
+    const db = this.prisma;
+    return db.solution.update({ where: { id }, data: input }) as Promise<Solution>;
+  }
+
+  async deleteSolution(id: string): Promise<void> {
+    const db = this.prisma;
+    await this.prisma.$transaction([
+      db.solutionVote.deleteMany({ where: { solutionId: id } }),
+      db.solution.delete({ where: { id } })
+    ]);
+  }
+
+  async voteSolution(solutionId: string, userId: string, value: 1 | -1): Promise<SolutionVote> {
+    const db = this.prisma;
+    const vote = (await db.solutionVote.upsert({
+      where: { solutionId_userId: { solutionId, userId } },
+      update: { value },
+      create: { solutionId, userId, value }
+    })) as SolutionVote;
+    const [upvotes, downvotes] = await Promise.all([
+      db.solutionVote.count({ where: { solutionId, value: 1 } }) as Promise<number>,
+      db.solutionVote.count({ where: { solutionId, value: -1 } }) as Promise<number>
+    ]);
+    await db.solution.update({ where: { id: solutionId }, data: { upvotes, downvotes } });
+    return vote;
+  }
+
+  async createReport(input: CreateReportInput): Promise<Report> {
+    const db = this.prisma;
+    return db.report.create({
+      data: {
+        targetType: input.targetType,
+        targetId: input.targetId,
+        reporterId: input.reporterId,
+        reason: input.reason,
+        details: input.details
+      }
+    }) as Promise<Report>;
+  }
+
+  async listReports(input: ListReportsInput): Promise<{ items: Report[]; total: number; page: number; limit: number }> {
+    const db = this.prisma;
+    const where = {
+      ...(input.status ? { status: input.status } : {}),
+      ...(input.targetType ? { targetType: input.targetType } : {}),
+      ...(input.reporterId ? { reporterId: input.reporterId } : {})
+    };
+    const [items, total] = await Promise.all([
+      db.report.findMany({
+        where,
+        skip: (input.page - 1) * input.limit,
+        take: input.limit,
+        orderBy: { createdAt: "desc" }
+      }) as Promise<Report[]>,
+      db.report.count({ where }) as Promise<number>
+    ]);
+    return { items, total, page: input.page, limit: input.limit };
+  }
+
+  async updateReport(id: string, input: UpdateReportInput): Promise<Report> {
+    const db = this.prisma;
+    return db.report.update({ where: { id }, data: input }) as Promise<Report>;
+  }
+
+  async followUser(followerId: string, followingId: string): Promise<UserFollow> {
+    const db = this.prisma;
+    return db.userFollow.upsert({
+      where: { followerId_followingId: { followerId, followingId } },
+      update: {},
+      create: { followerId, followingId }
+    }) as Promise<UserFollow>;
+  }
+
+  async unfollowUser(followerId: string, followingId: string): Promise<void> {
+    const db = this.prisma;
+    await db.userFollow.deleteMany({ where: { followerId, followingId } });
+  }
+
+  async isFollowing(followerId: string, followingId: string): Promise<boolean> {
+    const db = this.prisma;
+    const count = (await db.userFollow.count({ where: { followerId, followingId } })) as number;
+    return count > 0;
+  }
+
+  async countFollowers(userId: string): Promise<number> {
+    const db = this.prisma;
+    return db.userFollow.count({ where: { followingId: userId } }) as Promise<number>;
+  }
+
+  async countFollowing(userId: string): Promise<number> {
+    const db = this.prisma;
+    return db.userFollow.count({ where: { followerId: userId } }) as Promise<number>;
+  }
+
+  async listFollowers(userId: string, input: { page: number; limit: number }) {
+    const db = this.prisma;
+    const follows = (await db.userFollow.findMany({
+      where: { followingId: userId },
+      skip: (input.page - 1) * input.limit,
+      take: input.limit,
+      orderBy: { createdAt: "desc" }
+    })) as UserFollow[];
+    const total = (await db.userFollow.count({ where: { followingId: userId } })) as number;
+    const users = await this.prisma.user.findMany({ where: { id: { in: follows.map((follow) => follow.followerId) } } });
+    return { items: users as User[], total, page: input.page, limit: input.limit };
+  }
+
+  async listFollowing(userId: string, input: { page: number; limit: number }) {
+    const db = this.prisma;
+    const follows = (await db.userFollow.findMany({
+      where: { followerId: userId },
+      skip: (input.page - 1) * input.limit,
+      take: input.limit,
+      orderBy: { createdAt: "desc" }
+    })) as UserFollow[];
+    const total = (await db.userFollow.count({ where: { followerId: userId } })) as number;
+    const users = await this.prisma.user.findMany({ where: { id: { in: follows.map((follow) => follow.followingId) } } });
+    return { items: users as User[], total, page: input.page, limit: input.limit };
+  }
+
+  async createNotification(input: CreateNotificationInput): Promise<Notification> {
+    const db = this.prisma;
+    return db.notification.create({ data: input }) as Promise<Notification>;
+  }
+
+  async listNotifications(input: ListNotificationsInput) {
+    const db = this.prisma;
+    const where = {
+      userId: input.userId,
+      ...(input.unreadOnly ? { readAt: null } : {})
+    };
+    const [items, total] = await Promise.all([
+      db.notification.findMany({
+        where,
+        skip: (input.page - 1) * input.limit,
+        take: input.limit,
+        orderBy: { createdAt: "desc" }
+      }) as Promise<Notification[]>,
+      db.notification.count({ where }) as Promise<number>
+    ]);
+    return { items, total, page: input.page, limit: input.limit };
+  }
+
+  async markNotificationRead(id: string, userId: string): Promise<Notification> {
+    const db = this.prisma;
+    const existing = (await db.notification.findFirst({ where: { id, userId } })) as Notification | null;
+    if (!existing) throw ApiError.notFound("Notification not found");
+    return db.notification.update({ where: { id }, data: { readAt: existing.readAt ?? new Date() } }) as Promise<Notification>;
+  }
+
+  async markAllNotificationsRead(userId: string): Promise<number> {
+    const db = this.prisma;
+    const result = (await db.notification.updateMany({
+      where: { userId, readAt: null },
+      data: { readAt: new Date() }
+    })) as { count: number };
+    return result.count;
+  }
+
+  async createAuditLog(input: CreateAuditLogInput): Promise<AdminAuditLog> {
+    const db = this.prisma;
+    return db.adminAuditLog.create({
+      data: {
+        actorId: input.actorId,
+        action: input.action,
+        entityType: input.entityType,
+        entityId: input.entityId,
+        requestMethod: input.requestMethod,
+        path: input.path,
+        statusCode: input.statusCode,
+        outcome: input.outcome ?? "SUCCESS",
+        details: input.details as Prisma.InputJsonValue | undefined,
+        ip: input.ip,
+        userAgent: input.userAgent
+      }
+    }) as Promise<AdminAuditLog>;
+  }
+
+  async listAuditLogs(input: ListAuditLogsInput) {
+    const db = this.prisma;
+    const where = {
+      ...(input.actorId ? { actorId: input.actorId } : {}),
+      ...(input.entityType ? { entityType: input.entityType } : {})
+    };
+    const [items, total] = await Promise.all([
+      db.adminAuditLog.findMany({
+        where,
+        skip: (input.page - 1) * input.limit,
+        take: input.limit,
+        orderBy: { createdAt: "desc" }
+      }) as Promise<AdminAuditLog[]>,
+      db.adminAuditLog.count({ where }) as Promise<number>
+    ]);
+    return { items, total, page: input.page, limit: input.limit };
+  }
+
+  async recordApiUsageEvent(input: CreateApiUsageEventInput): Promise<ApiUsageEvent> {
+    const db = this.prisma;
+    return db.apiUsageEvent.create({
+      data: {
+        userId: input.userId,
+        method: input.method,
+        path: input.path,
+        route: input.route,
+        statusCode: input.statusCode,
+        durationMs: input.durationMs,
+        ip: input.ip,
+        userAgent: input.userAgent,
+        rateLimited: input.rateLimited ?? false
+      }
+    }) as Promise<ApiUsageEvent>;
+  }
+
+  async listApiUsageEvents(input: ListApiUsageEventsInput) {
+    const db = this.prisma;
+    const where: Record<string, unknown> = {
+      ...(input.userId ? { userId: input.userId } : {}),
+      ...(input.statusCode !== undefined ? { statusCode: input.statusCode } : {}),
+      ...(input.rateLimited !== undefined ? { rateLimited: input.rateLimited } : {})
+    };
+    if (input.path) {
+      where.path = { contains: input.path, mode: "insensitive" };
+    }
+    if (input.since) {
+      where.createdAt = { gte: input.since };
+    }
+    const [items, total] = await Promise.all([
+      db.apiUsageEvent.findMany({
+        where,
+        skip: (input.page - 1) * input.limit,
+        take: input.limit,
+        orderBy: { createdAt: "desc" }
+      }) as Promise<ApiUsageEvent[]>,
+      db.apiUsageEvent.count({ where }) as Promise<number>
+    ]);
+    return { items, total, page: input.page, limit: input.limit };
+  }
+
+  async deleteApiUsageEventsBefore(cutoff: Date): Promise<number> {
+    const db = this.prisma;
+    const result = (await db.apiUsageEvent.deleteMany({ where: { createdAt: { lt: cutoff } } })) as { count: number };
+    return result.count;
+  }
+
+  async createBackupRun(input: CreateBackupRunInput): Promise<BackupRun> {
+    const db = this.prisma;
+    return db.backupRun.create({
+      data: {
+        requestedById: input.requestedById,
+        status: input.status,
+        filename: input.filename,
+        sizeBytes: input.sizeBytes,
+        errorMessage: input.errorMessage,
+        startedAt: input.startedAt,
+        completedAt: input.completedAt
+      }
+    }) as Promise<BackupRun>;
+  }
+
+  async updateBackupRun(id: string, input: UpdateBackupRunInput): Promise<BackupRun> {
+    const db = this.prisma;
+    return db.backupRun.update({ where: { id }, data: input }) as Promise<BackupRun>;
+  }
+
+  async listBackupRuns(input: ListBackupRunsInput) {
+    const db = this.prisma;
+    const where = input.status ? { status: input.status } : {};
+    const [items, total] = await Promise.all([
+      db.backupRun.findMany({
+        where,
+        skip: (input.page - 1) * input.limit,
+        take: input.limit,
+        orderBy: { createdAt: "desc" }
+      }) as Promise<BackupRun[]>,
+      db.backupRun.count({ where }) as Promise<number>
+    ]);
+    return { items, total, page: input.page, limit: input.limit };
+  }
+
+  async createHealthCheckSnapshot(input: CreateHealthCheckSnapshotInput): Promise<HealthCheckSnapshot> {
+    const db = this.prisma;
+    return db.healthCheckSnapshot.create({
+      data: {
+        status: input.status,
+        details: input.details as Prisma.InputJsonValue
+      }
+    }) as Promise<HealthCheckSnapshot>;
+  }
+
+  async listHealthCheckSnapshots(input: ListHealthCheckSnapshotsInput) {
+    const db = this.prisma;
+    const where = input.status ? { status: input.status } : {};
+    const [items, total] = await Promise.all([
+      db.healthCheckSnapshot.findMany({
+        where,
+        skip: (input.page - 1) * input.limit,
+        take: input.limit,
+        orderBy: { createdAt: "desc" }
+      }) as Promise<HealthCheckSnapshot[]>,
+      db.healthCheckSnapshot.count({ where }) as Promise<number>
+    ]);
+    return { items, total, page: input.page, limit: input.limit };
+  }
+
+  async createPracticeSession(input: CreatePracticeSessionInput): Promise<PracticeSessionWithProblems> {
+    const db = this.prisma;
+    const session = (await db.practiceSession.create({
+      data: {
+        userId: input.userId,
+        type: input.type,
+        title: input.title,
+        durationSeconds: input.durationSeconds,
+        settings: input.settings as Prisma.InputJsonValue | undefined,
+        problems: {
+          create: input.problemIds.map((problemId, index) => ({
+            problemId,
+            order: index
+          }))
+        }
+      },
+      include: {
+        problems: {
+          include: {
+            problem: {
+              include: { problemTags: { include: { tag: true } }, companyTags: { include: { company: true } } }
+            }
+          },
+          orderBy: { order: "asc" }
+        }
+      }
+    })) as PrismaPracticeSessionWithProblems;
+    return this.mapPracticeSession(session);
+  }
+
+  async listPracticeSessions(input: {
+    userId: string;
+    type?: PracticeSession["type"];
+    page: number;
+    limit: number;
+  }): Promise<{ items: PracticeSessionWithProblems[]; total: number; page: number; limit: number }> {
+    const db = this.prisma;
+    const where = { userId: input.userId, ...(input.type ? { type: input.type } : {}) };
+    const [sessions, total] = await Promise.all([
+      db.practiceSession.findMany({
+        where,
+        skip: (input.page - 1) * input.limit,
+        take: input.limit,
+        include: {
+          problems: {
+            include: {
+              problem: {
+                include: { problemTags: { include: { tag: true } }, companyTags: { include: { company: true } } }
+              }
+            },
+            orderBy: { order: "asc" }
+          }
+        },
+        orderBy: { startedAt: "desc" }
+      }) as Promise<PrismaPracticeSessionWithProblems[]>,
+      db.practiceSession.count({ where }) as Promise<number>
+    ]);
+    return {
+      items: sessions.map((session) => this.mapPracticeSession(session)),
+      total,
+      page: input.page,
+      limit: input.limit
+    };
+  }
+
+  async findPracticeSessionById(id: string): Promise<PracticeSessionWithProblems | null> {
+    const db = this.prisma;
+    const session = (await db.practiceSession.findUnique({
+      where: { id },
+      include: {
+        problems: {
+          include: {
+            problem: {
+              include: { problemTags: { include: { tag: true } }, companyTags: { include: { company: true } } }
+            }
+          },
+          orderBy: { order: "asc" }
+        }
+      }
+    })) as PrismaPracticeSessionWithProblems | null;
+    return session ? this.mapPracticeSession(session) : null;
+  }
+
+  async updatePracticeSession(id: string, input: UpdatePracticeSessionInput): Promise<PracticeSessionWithProblems> {
+    const db = this.prisma;
+    const session = (await db.practiceSession.update({
+      where: { id },
+      data: {
+        status: input.status,
+        finishedAt: input.finishedAt,
+        summary: input.summary as Prisma.InputJsonValue | undefined
+      },
+      include: {
+        problems: {
+          include: {
+            problem: {
+              include: { problemTags: { include: { tag: true } }, companyTags: { include: { company: true } } }
+            }
+          },
+          orderBy: { order: "asc" }
+        }
+      }
+    })) as PrismaPracticeSessionWithProblems;
+    return this.mapPracticeSession(session);
+  }
+
+  async updatePracticeSessionProblem(
+    sessionProblemId: string,
+    input: UpdatePracticeSessionProblemInput
+  ): Promise<PracticeSessionProblem> {
+    const db = this.prisma;
+    return db.practiceSessionProblem.update({
+      where: { id: sessionProblemId },
+      data: input
+    }) as Promise<PracticeSessionProblem>;
+  }
+
+  async createContestAnnouncement(input: {
+    contestId: string;
+    authorId: string;
+    title: string;
+    content: string;
+  }): Promise<ContestAnnouncement> {
+    const db = this.prisma;
+    return db.contestAnnouncement.create({ data: input }) as Promise<ContestAnnouncement>;
+  }
+
+  async listContestAnnouncements(contestId: string): Promise<ContestAnnouncement[]> {
+    const db = this.prisma;
+    return db.contestAnnouncement.findMany({
+      where: { contestId },
+      orderBy: { createdAt: "desc" }
+    }) as Promise<ContestAnnouncement[]>;
+  }
+
+  async createContestRatingJob(input: {
+    contestId: string;
+    requestedById?: string | null;
+    scheduledAt: Date;
+  }): Promise<ContestRatingJob> {
+    const db = this.prisma;
+    return db.contestRatingJob.create({
+      data: {
+        contestId: input.contestId,
+        requestedById: input.requestedById,
+        scheduledAt: input.scheduledAt,
+        status: "SCHEDULED"
+      }
+    }) as Promise<ContestRatingJob>;
+  }
+
+  async listContestRatingJobs(input: {
+    status?: ContestRatingJob["status"];
+    page: number;
+    limit: number;
+  }): Promise<{ items: ContestRatingJob[]; total: number; page: number; limit: number }> {
+    const db = this.prisma;
+    const where = input.status ? { status: input.status } : {};
+    const [items, total] = await Promise.all([
+      db.contestRatingJob.findMany({
+        where,
+        skip: (input.page - 1) * input.limit,
+        take: input.limit,
+        orderBy: [{ scheduledAt: "asc" }, { createdAt: "asc" }]
+      }) as Promise<ContestRatingJob[]>,
+      db.contestRatingJob.count({ where }) as Promise<number>
+    ]);
+    return { items, total, page: input.page, limit: input.limit };
+  }
+
+  async updateContestRatingJob(
+    id: string,
+    input: Partial<Pick<ContestRatingJob, "status" | "startedAt" | "completedAt" | "errorMessage">>
+  ): Promise<ContestRatingJob> {
+    const db = this.prisma;
+    return db.contestRatingJob.update({ where: { id }, data: input }) as Promise<ContestRatingJob>;
+  }
+
+  async createMonitoringAlert(input: {
+    severity: string;
+    source: string;
+    title: string;
+    message: string;
+    details?: Record<string, unknown> | null;
+  }): Promise<MonitoringAlert> {
+    const db = this.prisma;
+    return db.monitoringAlert.create({
+      data: {
+        severity: input.severity,
+        source: input.source,
+        title: input.title,
+        message: input.message,
+        details: input.details as Prisma.InputJsonValue | undefined
+      }
+    }) as Promise<MonitoringAlert>;
+  }
+
+  async listMonitoringAlerts(input: {
+    status?: MonitoringAlert["status"];
+    page: number;
+    limit: number;
+  }): Promise<{ items: MonitoringAlert[]; total: number; page: number; limit: number }> {
+    const db = this.prisma;
+    const where = input.status ? { status: input.status } : {};
+    const [items, total] = await Promise.all([
+      db.monitoringAlert.findMany({
+        where,
+        skip: (input.page - 1) * input.limit,
+        take: input.limit,
+        orderBy: { createdAt: "desc" }
+      }) as Promise<MonitoringAlert[]>,
+      db.monitoringAlert.count({ where }) as Promise<number>
+    ]);
+    return { items, total, page: input.page, limit: input.limit };
+  }
+
+  async updateMonitoringAlert(
+    id: string,
+    input: Partial<Pick<MonitoringAlert, "status" | "acknowledgedById" | "acknowledgedAt" | "resolvedById" | "resolvedAt">>
+  ): Promise<MonitoringAlert> {
+    const db = this.prisma;
+    return db.monitoringAlert.update({ where: { id }, data: input }) as Promise<MonitoringAlert>;
+  }
+
+  async getUserRating(userId: string): Promise<UserRating | null> {
+    const db = this.prisma;
+    return db.userRating.findUnique({ where: { userId } }) as Promise<UserRating | null>;
+  }
+
+  async upsertUserRating(input: UpsertUserRatingInput): Promise<UserRating> {
+    const db = this.prisma;
+    return db.userRating.upsert({
+      where: { userId: input.userId },
+      update: {
+        rating: input.rating,
+        volatility: input.volatility,
+        contestsRated: input.contestsRated
+      },
+      create: input
+    }) as Promise<UserRating>;
+  }
+
+  async listUserRatings(input: { page: number; limit: number }) {
+    const db = this.prisma;
+    const [ratings, total] = await Promise.all([
+      db.userRating.findMany({
+        skip: (input.page - 1) * input.limit,
+        take: input.limit,
+        orderBy: { rating: "desc" }
+      }) as Promise<UserRating[]>,
+      db.userRating.count() as Promise<number>
+    ]);
+    const users = await this.prisma.user.findMany({ where: { id: { in: ratings.map((rating) => rating.userId) } } });
+    const userById = new Map(users.map((user) => [user.id, user as User]));
+    const items = ratings.map((rating) => {
+      const user = userById.get(rating.userId);
+      return user ? { ...rating, user: this.publicLeaderboardUser(user) } : rating;
+    });
+    return { items, total, page: input.page, limit: input.limit };
+  }
+
+  async createRatingEvent(input: CreateRatingEventInput): Promise<RatingEvent> {
+    const db = this.prisma;
+    if (input.contestId) {
+      return db.ratingEvent.upsert({
+        where: { userId_contestId: { userId: input.userId, contestId: input.contestId } },
+        update: {
+          oldRating: input.oldRating,
+          newRating: input.newRating,
+          delta: input.delta,
+          rank: input.rank,
+          participants: input.participants
+        },
+        create: input
+      }) as Promise<RatingEvent>;
+    }
+    return db.ratingEvent.create({ data: input }) as Promise<RatingEvent>;
+  }
+
+  async listRatingEvents(input: ListRatingEventsInput) {
+    const db = this.prisma;
+    const where = {
+      ...(input.userId ? { userId: input.userId } : {}),
+      ...(input.contestId ? { contestId: input.contestId } : {})
+    };
+    const [items, total] = await Promise.all([
+      db.ratingEvent.findMany({
+        where,
+        skip: (input.page - 1) * input.limit,
+        take: input.limit,
+        orderBy: { createdAt: "desc" }
+      }) as Promise<RatingEvent[]>,
+      db.ratingEvent.count({ where }) as Promise<number>
+    ]);
+    return { items, total, page: input.page, limit: input.limit };
+  }
+
+  async deleteRatingEventsByContest(contestId: string): Promise<number> {
+    const db = this.prisma;
+    const result = (await db.ratingEvent.deleteMany({ where: { contestId } })) as { count: number };
+    return result.count;
+  }
+
   async listBookmarks(userId: string): Promise<Array<Bookmark & { problem: Problem }>> {
     const bookmarks = await this.prisma.bookmark.findMany({
       where: { userId },
-      include: { problem: { include: { problemTags: { include: { tag: true } } } } }
+      include: { problem: { include: { problemTags: { include: { tag: true } }, companyTags: { include: { company: true } } } } }
     });
     return bookmarks.map((bookmark) => this.mapBookmark(bookmark));
   }
@@ -1031,11 +2294,244 @@ export class PrismaRepository implements AppRepository {
     return tag as Tag;
   }
 
-  // flatten problemTags join into a plain tags array
+  private async ensureCompany(input: ProblemCompanyInput): Promise<Company> {
+    const db = this.prisma;
+    if (input.companyId) {
+      const company = (await db.company.findUnique({ where: { id: input.companyId } })) as Company | null;
+      if (!company) throw ApiError.notFound("Company not found");
+      return company;
+    }
+    if (!input.name) {
+      throw ApiError.badRequest("Company name is required");
+    }
+    const slug = (input.slug || input.name)
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/(^-|-$)/g, "");
+    return db.company.upsert({
+      where: { slug },
+      update: { name: input.name },
+      create: { name: input.name, slug }
+    }) as Promise<Company>;
+  }
+
+  private async problemCompaniesFor(problemId: string): Promise<ProblemCompanyTag[]> {
+    const db = this.prisma;
+    return db.problemCompany.findMany({
+      where: { problemId },
+      include: { company: true },
+      orderBy: [{ frequency: "desc" }, { company: { name: "asc" } }]
+    }) as Promise<ProblemCompanyTag[]>;
+  }
+
+  private async mapLearningCollection(
+    collection: LearningCollection,
+    userId?: string
+  ): Promise<LearningCollectionWithItems> {
+    const db = this.prisma;
+    const [items, progress] = await Promise.all([
+      db.learningCollectionItem.findMany({
+        where: { collectionId: collection.id },
+        include: {
+          problem: {
+            include: { problemTags: { include: { tag: true } }, companyTags: { include: { company: true } } }
+          }
+        },
+        orderBy: { order: "asc" }
+      }) as Promise<Array<LearningCollectionItem & { problem?: PrismaProblemWithTags }>>,
+      userId
+        ? (db.learningCollectionProgress.findUnique({
+            where: { collectionId_userId: { collectionId: collection.id, userId } }
+          }) as Promise<LearningCollectionProgress | null>)
+        : Promise.resolve(null)
+    ]);
+    return {
+      ...collection,
+      items: items.map((item) => ({
+        ...item,
+        problem: item.problem ? this.mapProblem(item.problem) : undefined
+      })),
+      progress
+    };
+  }
+
+  private mapDailyChallenge(
+    challenge: DailyChallenge & { problem?: PrismaProblemWithTags },
+    completion: DailyChallengeCompletion | null = null
+  ): DailyChallengeWithProblem {
+    return {
+      ...challenge,
+      problem: challenge.problem ? this.mapProblem(challenge.problem) : undefined,
+      completion
+    };
+  }
+
+  private mapPracticeSession(session: PrismaPracticeSessionWithProblems): PracticeSessionWithProblems {
+    return {
+      id: session.id,
+      userId: session.userId,
+      type: session.type,
+      status: session.status,
+      title: session.title,
+      durationSeconds: session.durationSeconds,
+      startedAt: session.startedAt,
+      finishedAt: session.finishedAt,
+      settings: jsonObject(session.settings),
+      summary: jsonObject(session.summary),
+      createdAt: session.createdAt,
+      updatedAt: session.updatedAt,
+      problems: (session.problems ?? []).map((item: PracticeSessionProblem & { problem?: PrismaProblemWithTags }) => ({
+        ...item,
+        problem: item.problem ? this.mapProblem(item.problem) : undefined
+      }))
+    };
+  }
+
+  private async ensureDefaultBadges(): Promise<void> {
+    const db = this.prisma;
+    const defaults = [
+      {
+        key: "first-solve",
+        name: "First Solve",
+        description: "Solved the first problem.",
+        icon: "sparkles",
+        triggerType: "SOLVED_COUNT",
+        triggerValue: 1
+      },
+      {
+        key: "daily-challenge",
+        name: "Daily Challenger",
+        description: "Completed a daily challenge.",
+        icon: "calendar-check",
+        triggerType: "DAILY_CHALLENGE",
+        triggerValue: 1
+      },
+      {
+        key: "study-plan-complete",
+        name: "Study Plan Finisher",
+        description: "Completed a study plan.",
+        icon: "graduation-cap",
+        triggerType: "STUDY_PLAN_COMPLETE",
+        triggerValue: 1
+      },
+      {
+        key: "mock-interview-complete",
+        name: "Interview Ready",
+        description: "Completed a mock interview session.",
+        icon: "timer",
+        triggerType: "MOCK_INTERVIEW_COMPLETE",
+        triggerValue: 1
+      }
+    ];
+    for (const badge of defaults) {
+      await db.badgeDefinition.upsert({
+        where: { key: badge.key },
+        update: badge,
+        create: badge
+      });
+    }
+  }
+
+  private async problemStatsById(problemIds: string[]) {
+    const result = new Map<string, ReturnType<typeof emptyProblemStats>>();
+    for (const problemId of problemIds) {
+      result.set(problemId, emptyProblemStats());
+    }
+
+    if (problemIds.length === 0) {
+      return result;
+    }
+
+    const [totalSubmissions, acceptedSubmissions, solvedStatuses] = await Promise.all([
+      this.prisma.submission.groupBy({
+        by: ["problemId"],
+        where: { problemId: { in: problemIds } },
+        _count: { _all: true }
+      }),
+      this.prisma.submission.groupBy({
+        by: ["problemId"],
+        where: { problemId: { in: problemIds }, status: "ACCEPTED" },
+        _count: { _all: true }
+      }),
+      this.prisma.problemSolvedStatus.groupBy({
+        by: ["problemId"],
+        where: { problemId: { in: problemIds }, solved: true },
+        _count: { _all: true }
+      })
+    ]);
+
+    for (const row of totalSubmissions) {
+      const stats = result.get(row.problemId) ?? emptyProblemStats();
+      stats.totalSubmissions = row._count._all;
+      stats.frequency = row._count._all;
+      result.set(row.problemId, stats);
+    }
+
+    for (const row of acceptedSubmissions) {
+      const stats = result.get(row.problemId) ?? emptyProblemStats();
+      stats.acceptedSubmissions = row._count._all;
+      result.set(row.problemId, stats);
+    }
+
+    for (const row of solvedStatuses) {
+      const stats = result.get(row.problemId) ?? emptyProblemStats();
+      stats.solvedCount = row._count._all;
+      result.set(row.problemId, stats);
+    }
+
+    for (const stats of result.values()) {
+      stats.acceptanceRate = stats.totalSubmissions
+        ? Math.round((stats.acceptedSubmissions / stats.totalSubmissions) * 100)
+        : 0;
+    }
+
+    return result;
+  }
+
+  private sortProblems<T extends Problem & { status?: ProblemStatus }>(items: T[], sort: ProblemFilters["sort"]): T[] {
+    const difficultyOrder: Record<Difficulty, number> = {
+      EASY: 1,
+      MEDIUM: 2,
+      HARD: 3
+    };
+
+    const copy = items.slice();
+    copy.sort((a, b) => {
+      if (sort === "oldest") {
+        return a.createdAt.getTime() - b.createdAt.getTime();
+      }
+      if (sort === "title") {
+        return a.title.localeCompare(b.title);
+      }
+      if (sort === "difficulty") {
+        const diff = difficultyOrder[a.difficulty] - difficultyOrder[b.difficulty];
+        if (diff !== 0) return diff;
+        return a.title.localeCompare(b.title);
+      }
+      if (sort === "acceptance") {
+        return (b.acceptanceRate ?? 0) - (a.acceptanceRate ?? 0) || a.title.localeCompare(b.title);
+      }
+      if (sort === "submissions" || sort === "frequency") {
+        return (b.totalSubmissions ?? 0) - (a.totalSubmissions ?? 0) || a.title.localeCompare(b.title);
+      }
+      if (sort === "solved") {
+        return (b.solvedCount ?? 0) - (a.solvedCount ?? 0) || a.title.localeCompare(b.title);
+      }
+
+      return b.createdAt.getTime() - a.createdAt.getTime();
+    });
+    return copy;
+  }
+
+  // flatten problemTags/companyTags joins into plain arrays
   private mapProblem(problem: PrismaProblemWithTags): Problem {
     const tags = [];
     for (let i = 0; i < problem.problemTags.length; i++) {
       tags.push(problem.problemTags[i].tag);
+    }
+    const companies = [];
+    for (let i = 0; i < problem.companyTags.length; i++) {
+      companies.push(problem.companyTags[i]);
     }
 
     return {
@@ -1056,7 +2552,8 @@ export class PrismaRepository implements AppRepository {
       createdById: problem.createdById,
       createdAt: problem.createdAt,
       updatedAt: problem.updatedAt,
-      tags
+      tags,
+      companies
     };
   }
 
@@ -1086,13 +2583,42 @@ export class PrismaRepository implements AppRepository {
       downvotes: discussion.downvotes,
       createdAt: discussion.createdAt,
       updatedAt: discussion.updatedAt,
-      comments: discussion.comments as DiscussionComment[],
+      comments: discussion.comments.map((comment) => ({
+        ...(comment as DiscussionComment),
+        isAcceptedAnswer: discussion.acceptedAnswer?.commentId === comment.id
+      })),
       author: {
         id: discussion.author.id,
         username: discussion.author.username,
         displayName: discussion.author.displayName,
         avatarUrl: discussion.author.avatarUrl
       }
+    };
+  }
+
+  private async mapSolution(solution: Solution): Promise<SolutionWithRelations> {
+    const [author, problem] = await Promise.all([
+      this.findUserById(solution.authorId),
+      this.findProblemById(solution.problemId)
+    ]);
+    return {
+      ...solution,
+      author: author
+        ? {
+            id: author.id,
+            username: author.username,
+            displayName: author.displayName,
+            avatarUrl: author.avatarUrl
+          }
+        : undefined,
+      problem: problem
+        ? {
+            id: problem.id,
+            slug: problem.slug,
+            title: problem.title,
+            difficulty: problem.difficulty
+          }
+        : undefined
     };
   }
 
@@ -1162,6 +2688,10 @@ export class PrismaRepository implements AppRepository {
     return value.toISOString().slice(0, 10);
   }
 
+  private normalizedDay(value: Date): Date {
+    return new Date(`${this.dayKey(value)}T00:00:00.000Z`);
+  }
+
   private withRankMovement(
     row: Omit<LeaderboardRow, "previousRank" | "rankMovement" | "rankMovementDirection">,
     snapshots: UserRankSnapshot[]
@@ -1210,4 +2740,11 @@ export class PrismaRepository implements AppRepository {
       countryCode: user.countryCode
     };
   }
+}
+
+function jsonObject(value: Prisma.JsonValue | null): Record<string, unknown> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+  return value as Record<string, unknown>;
 }

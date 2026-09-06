@@ -1,4 +1,5 @@
 import type { Executor, ExecutionRequest, ExecutionResult } from "./Executor";
+import { problemFixtures } from "../constants/problemFixtures";
 
 export class MockExecutor implements Executor {
   async execute(request: ExecutionRequest): Promise<ExecutionResult> {
@@ -280,6 +281,14 @@ export class MockExecutor implements Executor {
 
 // hard-coded solutions for known fixture problems
 function explicitFixtureOutput(problemSlug: string, stdin: string): string {
+  const fixture = problemFixtures.find((problem) => problem.slug === problemSlug);
+  const cases = fixture ? [...fixture.sampleCases, ...fixture.hiddenCases] : [];
+  const normalizedInput = normalizeText(stdin);
+  const knownCase = cases.find((testCase) => normalizeText(testCase.input) === normalizedInput);
+  if (knownCase) {
+    return knownCase.expectedOutput;
+  }
+
   if (problemSlug === "two-sum") {
     const tokens = stdin.trim().split(/\s+/).map(Number);
     const n = tokens[0] ?? 0;
@@ -300,6 +309,10 @@ function explicitFixtureOutput(problemSlug: string, stdin: string): string {
 
   // unknown problem - empty output
   return "";
+}
+
+function normalizeText(value: string): string {
+  return value.replace(/\r\n/g, "\n").trim();
 }
 
 // pull string literals out of common print calls

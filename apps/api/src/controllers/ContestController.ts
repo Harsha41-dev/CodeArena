@@ -85,6 +85,16 @@ export class ContestController {
     sendSuccess(res, "Contest leaderboard", rows);
   };
 
+  announcements = async (req: Request, res: Response): Promise<void> => {
+    const announcements = await this.contestService.announcements(req.params.id);
+    sendSuccess(res, "Contest announcements", announcements);
+  };
+
+  createAnnouncement = async (req: Request, res: Response): Promise<void> => {
+    const announcement = await this.contestService.createAnnouncement(req.params.id, req.user!.id, req.body);
+    sendSuccess(res, "Contest announcement created", announcement, undefined, 201);
+  };
+
   submit = async (req: Request, res: Response): Promise<void> => {
     const contestId = req.params.id;
     const userId = req.user!.id;
@@ -99,7 +109,8 @@ export class ContestController {
       "Contest submission queued",
       {
         submissionId: submission.id,
-        status: submission.status
+        status: submission.status,
+        queuePosition: submission.queuePosition
       },
       undefined,
       201

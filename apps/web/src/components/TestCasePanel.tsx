@@ -24,7 +24,7 @@ export function TestCasePanel({
   const customIndex = testCases.length;
   const isCustom = activeCase === customIndex;
   const selected = testCases[activeCase];
-  const selectedResult = result?.results[activeCase];
+  const selectedResult = selected ? result?.results.find((item) => item.testCaseId === selected.id) : undefined;
 
   function handleCustomInputChange(event: React.ChangeEvent<HTMLTextAreaElement>) {
     if (onCustomInputChange) {

@@ -32,12 +32,15 @@ export class UserService {
     return publicUser;
   }
 
-  async getByUsername(username: string): Promise<PublicUser> {
+  async getByUsername(username: string): Promise<Omit<PublicUser, "email">> {
     const user = await this.repository.findUserByUsername(username);
     if (!user) {
       throw ApiError.notFound("User not found");
     }
-    return this.authService.toPublicUser(user);
+    const publicUser = this.authService.toPublicUser(user);
+    const { email, ...profile } = publicUser;
+    void email;
+    return profile;
   }
 
   async getStats(username: string) {
@@ -48,6 +51,14 @@ export class UserService {
 
     const stats = await this.repository.getUserStats(user.id);
     return stats;
+  }
+
+  async getBadges(username: string) {
+    const user = await this.repository.findUserByUsername(username);
+    if (!user) {
+      throw ApiError.notFound("User not found");
+    }
+    return this.repository.listUserBadges(user.id);
   }
 
   async adminList(input: ListUsersInput) {
@@ -116,7 +127,7 @@ export class UserService {
       throw ApiError.badRequest("Admin cannot delete their own account");
     }
 
-    // soft delete — set status + deletedAt
+    // soft delete - set status + deletedAt
     await this.repository.updateUser(id, {
       status: "DELETED",
       deletedAt: new Date()

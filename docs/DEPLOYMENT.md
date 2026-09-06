@@ -34,6 +34,10 @@ EXECUTOR_MODE=judge0
 ALLOW_MOCK_EXECUTOR_IN_PRODUCTION=false
 JUDGE0_BASE_URL=https://...
 JUDGE0_API_KEY=...
+BACKUP_DIR=/var/backups/codearena
+PG_DUMP_PATH=pg_dump
+BACKUP_TIMEOUT_MS=120000
+OPS_TELEMETRY_RETENTION_DAYS=30
 ```
 
 For the frontend build:
@@ -49,7 +53,7 @@ VITE_API_URL=https://your-api-origin.example/api/v1
 3. Set all API and worker environment variables.
 4. Generate Prisma client with `npm run db:generate`.
 5. Build API with `npm run build -w apps/api`.
-6. Run migrations with `npm run db:migrate`.
+6. Run migrations with `npm run db:migrate:deploy`.
 7. Seed only if it is a demo or staging environment.
 8. Sync Judge0 languages if using Judge0.
 9. Start API with `npm run start -w apps/api`.
@@ -57,6 +61,7 @@ VITE_API_URL=https://your-api-origin.example/api/v1
 11. Build and deploy frontend with correct `VITE_API_URL`.
 12. Set `CORS_ORIGIN` to the deployed web URL.
 13. Check `/health`, `/api-docs`, login, problem list, run, submit, and final verdict update.
+14. Open the admin dashboard and verify production status, audit logs, report queue, abuse analytics, and backup status.
 
 ## Docker Compose
 
@@ -97,7 +102,11 @@ Before considering the deployment working, I would verify:
 - Redis queue is connected.
 - `/health` returns healthy or clear degraded status.
 - `/api/v1/executor/health` can reach Judge0.
-- Admin deep health works for admin users.
+- `/api/v1/admin/monitoring/status` works for admin users.
+- Admin can create a health snapshot and a backup run.
+- Admin audit logs record admin mutation routes.
+- Reports submitted by users appear in the moderation queue.
+- Abuse analytics shows API volume, errors, rate-limited requests, top paths, and suspicious actors.
 - A sample run works.
 - A queued submission reaches a terminal verdict.
 - Hidden test data is not returned to normal users.
@@ -106,10 +115,14 @@ Before considering the deployment working, I would verify:
 
 - API and worker should be separate processes.
 - Redis-backed BullMQ should be used in deployment.
+- API and worker should share the same `REDIS_URL` for queues and live submission event pub/sub.
 - API and worker must use the same `EXECUTOR_MODE`.
 - JWT secrets should be strong and stored only in the hosting provider.
 - `CORS_ORIGIN` should not be `*` in production.
 - Run leaderboard snapshot on a schedule if rank movement is needed.
+- Run database backups on a hosting cron or through the admin backup button, and store backup files outside the app release directory.
+- Review moderation reports and audit logs regularly after launch.
+- Keep `OPS_TELEMETRY_RETENTION_DAYS` high enough for abuse review but low enough to avoid unbounded API usage table growth.
 - Logs should not include user source code or secrets.
 
 ## Code Execution Warning

@@ -110,7 +110,7 @@ export class AuthService {
       throw ApiError.forbidden("User account is not active");
     }
 
-    // rotate — revoke old refresh token then mint a new pair
+    // rotate - revoke old refresh token then mint a new pair
     await this.repository.revokeRefreshToken(tokenHash);
 
     const tokens = await this.issueTokens(user);
@@ -167,7 +167,7 @@ export class AuthService {
       accessOptions
     );
 
-    // refresh token payload is intentionally empty — we only need the subject + signature
+    // refresh token payload is intentionally empty - we only need the subject + signature
     const refreshToken = jwt.sign({}, env.JWT_REFRESH_SECRET, refreshOptions);
 
     const expiresAt = new Date(Date.now() + parseDuration(env.JWT_REFRESH_EXPIRES_IN));

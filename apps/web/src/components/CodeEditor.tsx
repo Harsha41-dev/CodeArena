@@ -4,11 +4,19 @@ export function CodeEditor({
   language,
   code,
   fontSize,
+  theme,
+  tabSize,
+  wordWrap,
+  minimap,
   onChange
 }: {
   language: string;
   code: string;
   fontSize: number;
+  theme: "vs-dark" | "light" | "hc-black";
+  tabSize: number;
+  wordWrap: boolean;
+  minimap: boolean;
   onChange: (code: string) => void;
 }) {
   // monaco can pass undefined when the editor is cleared
@@ -22,16 +30,16 @@ export function CodeEditor({
 
   return (
     <Editor
-      theme="vs-dark"
+      theme={theme}
       language={language}
       value={code}
       onChange={handleChange}
       options={{
         fontSize,
-        minimap: { enabled: false },
+        minimap: { enabled: minimap },
         scrollBeyondLastLine: false,
-        wordWrap: "on",
-        tabSize: 2,
+        wordWrap: wordWrap ? "on" : "off",
+        tabSize,
         automaticLayout: true
       }}
     />

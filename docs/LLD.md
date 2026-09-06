@@ -110,7 +110,7 @@ For each seed it stores a problem-scoped `TestCase` row with `isGenerated`, `gen
 
 ## Submission Events
 
-`SubmissionEventBus` has publisher and subscriber interfaces. `InMemorySubmissionEventBus` is used for local tests and single-process demos. `RedisSubmissionEventBus` documents the production adapter shape for multi-instance deployments.
+`SubmissionEventBus` has publisher and subscriber interfaces. `InMemorySubmissionEventBus` is used for local tests and single-process demos. `RedisSubmissionEventBus` is selected in non-test Redis deployments for multi-instance API/worker event fan-out.
 
 `GET /api/v1/submissions/:id/events` opens an authenticated SSE stream. The controller first authorizes access through the submission service, sends the current status immediately, subscribes to future events, emits heartbeat frames every 20 seconds, and cleans up listeners on disconnect or terminal status.
 

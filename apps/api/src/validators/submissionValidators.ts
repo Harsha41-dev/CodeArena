@@ -34,7 +34,8 @@ export const runCodeSchema = z.object({
       problemSlug: z.string().min(1).optional(),
       problemId: z.string().min(1).optional(),
       ...languageSelectionSchema,
-      code: z.string().min(1).max(64_000)
+      code: z.string().min(1).max(64_000),
+      testCaseId: z.string().min(1).optional()
     })
     .refine(hasProblemSelector, { message: "problemSlug or problemId is required", path: ["problemSlug"] })
     .refine(hasLanguageSelector, {
@@ -81,11 +82,37 @@ export const submissionIdSchema = z.object({
   params: z.object({ id: z.string().min(1) })
 });
 
+export const rejudgeManySubmissionsSchema = z.object({
+  body: z.object({
+    problemSlug: z.string().trim().min(1).optional(),
+    language: z.string().trim().max(64).optional(),
+    dateFrom: z.string().datetime().optional(),
+    dateTo: z.string().datetime().optional(),
+    limit: z.number().int().min(1).max(500).optional(),
+    status: z
+      .enum([
+        "PENDING",
+        "RUNNING",
+        "ACCEPTED",
+        "WRONG_ANSWER",
+        "TIME_LIMIT_EXCEEDED",
+        "MEMORY_LIMIT_EXCEEDED",
+        "RUNTIME_ERROR",
+        "COMPILATION_ERROR",
+        "INTERNAL_ERROR"
+      ])
+      .optional()
+  })
+});
+
 export const listSubmissionsSchema = z.object({
   query: z.object({
     page: z.string().optional(),
     limit: z.string().optional(),
     problemSlug: z.string().optional(),
+    language: z.string().trim().max(64).optional(),
+    dateFrom: z.string().datetime().optional(),
+    dateTo: z.string().datetime().optional(),
     status: z
       .enum([
         "PENDING",

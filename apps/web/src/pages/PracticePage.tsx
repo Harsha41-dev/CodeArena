@@ -1,8 +1,21 @@
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
-import { Binary, BrainCircuit, Code2, GitBranch, ListChecks, Search, Shuffle, Sigma, Table2 } from "lucide-react";
+import {
+  Award,
+  Binary,
+  BrainCircuit,
+  Code2,
+  GitBranch,
+  ListChecks,
+  RefreshCcw,
+  Search,
+  Shuffle,
+  Sigma,
+  Table2
+} from "lucide-react";
 import { problemsApi } from "../services/api";
+import type { Problem } from "../types/api";
 import { DifficultyBadge } from "../components/DifficultyBadge";
 import { ProgressRing } from "../components/ProgressRing";
 import { StatsCard } from "../components/StatsCard";
@@ -27,11 +40,47 @@ export function PracticePage() {
     queryFn: () => problemsApi.list({ limit: "100" })
   });
 
-  // first 5 as "recommended"
+  const dailyChallenge = useQuery({
+    queryKey: ["daily-challenge"],
+    queryFn: problemsApi.dailyChallenge
+  });
+
+  const recommendation = useQuery({
+    queryKey: ["next-recommendation"],
+    queryFn: problemsApi.nextRecommendation
+  });
+
+  const problemSets = useQuery({
+    queryKey: ["problem-sets"],
+    queryFn: problemsApi.problemSets
+  });
+
+  const studyPlans = useQuery({
+    queryKey: ["study-plans"],
+    queryFn: problemsApi.studyPlans
+  });
+
+  const revisionQueue = useQuery({
+    queryKey: ["revision-queue"],
+    queryFn: problemsApi.revisionQueue
+  });
+
   const recommended = useMemo(() => {
     const list = problems.data ?? [];
-    return list.slice(0, 5);
-  }, [problems.data]);
+    const result: Problem[] = [];
+    if (recommendation.data?.problem) {
+      result.push(recommendation.data.problem);
+    }
+    for (let i = 0; i < list.length && result.length < 5; i += 1) {
+      if (result.some((problem) => problem.id === list[i].id)) {
+        continue;
+      }
+      if (list[i].status !== "SOLVED") {
+        result.push(list[i]);
+      }
+    }
+    return result;
+  }, [problems.data, recommendation.data?.problem]);
 
   const solvedCount = useMemo(() => {
     const list = problems.data ?? [];
@@ -57,15 +106,29 @@ export function PracticePage() {
     return <ErrorState title="Could not load practice dashboard" error={problems.error} />;
   }
 
-  const dailyChallengeTitle = problems.data?.[0]?.title ?? "-";
+  const dailyChallengeTitle = dailyChallenge.data?.problem?.title ?? "-";
   const continueList = (problems.data ?? []).slice(5, 9);
+  const sets = problemSets.data ?? [];
+  const plans = studyPlans.data ?? [];
+  const revisionProblems = revisionQueue.data?.problems ?? [];
+  const practiceSets =
+    sets.length > 0
+      ? sets
+      : tracks.map((track) => ({
+          slug: track.name.toLowerCase().replace(/\s+/g, "-"),
+          title: track.name,
+          description: `${track.tag} practice`,
+          totalProblems: 0,
+          solvedCount: 0,
+          progressPercent: 0
+        }));
 
   return (
     <div className="space-y-5">
       <div className="grid gap-4 md:grid-cols-4">
         <StatsCard label="Recommended" value={recommended.length} icon={ListChecks} />
         <StatsCard label="Daily Challenge" value={dailyChallengeTitle} icon={BrainCircuit} />
-        <StatsCard label="Topics" value={tracks.length} icon={Table2} />
+        <StatsCard label="Study Plans" value={plans.length || sets.length || tracks.length} icon={Table2} />
         <div className="rounded-xl border border-slate-200/80 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-[#111113]">
           <ProgressRing value={progress} label="Solved" />
         </div>
@@ -74,35 +137,63 @@ export function PracticePage() {
       <section className="ca-panel p-6">
         <h1 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white">Practice Dashboard</h1>
         <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          {tracks.map((track) => {
-            // count problems that have this tag
-            const list = problems.data ?? [];
-            let count = 0;
-            for (let i = 0; i < list.length; i++) {
-              const hasTag = list[i].tags.some((tag) => tag.name === track.tag);
-              if (hasTag) {
-                count = count + 1;
-              }
-            }
-
+          {practiceSets.map((set) => {
+            const Icon = iconForSet(set.slug);
             return (
               <Link
-                key={track.name}
-                to={`/problems?tag=${encodeURIComponent(track.tag)}`}
+                key={set.slug}
+                to={problemSetLink(set.slug)}
                 className="rounded-lg border border-slate-200/80 bg-slate-50/50 p-4 transition-colors hover:border-emerald-500/50 dark:border-white/10 dark:bg-white/5 dark:hover:border-emerald-500/30"
               >
-                <track.icon className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
-                <p className="mt-3 font-semibold text-slate-900 dark:text-white">{track.name}</p>
-                <p className="text-sm text-slate-500">{count} problems</p>
+                <Icon className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
+                <p className="mt-3 font-semibold text-slate-900 dark:text-white">{set.title}</p>
+                <p className="text-sm text-slate-500">
+                  {set.solvedCount}/{set.totalProblems} solved
+                </p>
+                <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-800">
+                  <div className="h-full bg-emerald-500" style={{ width: `${set.progressPercent}%` }} />
+                </div>
               </Link>
             );
           })}
         </div>
       </section>
 
-      <section className="grid gap-4 lg:grid-cols-[1fr_1fr]">
+      <section className="ca-panel p-6">
+        <h2 className="font-semibold">Study Plans</h2>
+        <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          {plans.map((plan) => (
+            <Link
+              key={plan.slug}
+              to={`/study/${plan.slug}`}
+              className="rounded-lg border border-slate-200/80 bg-slate-50/60 p-4 transition-colors hover:border-emerald-500/50 dark:border-white/10 dark:bg-white/5 dark:hover:border-emerald-500/30"
+            >
+              <div className="flex items-center justify-between gap-3">
+                <Award className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
+                <span className="rounded-md bg-white px-2 py-1 text-xs font-medium text-slate-500 dark:bg-black/20">
+                  {plan.solvedCount}/{plan.totalProblems}
+                </span>
+              </div>
+              <p className="mt-3 font-semibold text-slate-900 dark:text-white">{plan.title}</p>
+              <p className="mt-1 line-clamp-2 text-sm text-slate-500">{plan.description}</p>
+              <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-800">
+                <div className="h-full bg-emerald-500" style={{ width: `${plan.progressPercent}%` }} />
+              </div>
+              {plan.todayProblem ? (
+                <p className="mt-3 text-xs font-medium text-slate-500">Today: {plan.todayProblem.title}</p>
+              ) : null}
+            </Link>
+          ))}
+          {!plans.length ? <EmptyState title="No study plans available yet" /> : null}
+        </div>
+      </section>
+
+      <section className="grid gap-4 xl:grid-cols-3">
         <div className="ca-panel p-5">
           <h2 className="font-semibold">Recommended Problems</h2>
+          {recommendation.data?.reason ? (
+            <p className="mt-1 text-sm text-slate-500">{recommendation.data.reason}</p>
+          ) : null}
           <div className="mt-3 divide-y divide-slate-100 dark:divide-slate-800">
             {recommended.map((problem) => (
               <Link
@@ -140,7 +231,40 @@ export function PracticePage() {
             ))}
           </div>
         </div>
+
+        <div className="ca-panel p-5">
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="font-semibold">Revision Queue</h2>
+            <RefreshCcw className="h-4 w-4 text-slate-400" />
+          </div>
+          {revisionQueue.data?.reason ? <p className="mt-1 text-sm text-slate-500">{revisionQueue.data.reason}</p> : null}
+          <div className="mt-3 space-y-3">
+            {revisionProblems.slice(0, 5).map((problem) => (
+              <Link
+                key={problem.id}
+                to={`/problems/${problem.slug}`}
+                className="flex items-center justify-between rounded-md bg-slate-50 px-3 py-2 text-sm dark:bg-slate-950"
+              >
+                <span>{problem.title}</span>
+                <DifficultyBadge difficulty={problem.difficulty} />
+              </Link>
+            ))}
+            {!revisionProblems.length ? <EmptyState title="No revision items yet" /> : null}
+          </div>
+        </div>
       </section>
     </div>
   );
+}
+
+function iconForSet(slug: string) {
+  if (slug.includes("array")) return Table2;
+  if (slug.includes("dynamic")) return BrainCircuit;
+  if (slug.includes("graph")) return GitBranch;
+  if (slug.includes("top")) return ListChecks;
+  return Search;
+}
+
+function problemSetLink(slug: string): string {
+  return `/sets/${slug}`;
 }

@@ -21,7 +21,7 @@ export function useSubmissionEvents(submissionId: string | null | undefined, ena
     }
 
     if (!accessToken) {
-      // not logged in properly — let the page poll instead
+      // not logged in properly - let the page poll instead
       setConnectionState("fallback");
       return;
     }

@@ -25,6 +25,20 @@ export type SubmissionStatus =
 export type ProblemAssetType = "GENERATOR" | "REFERENCE_SOLUTION" | "VALIDATOR" | "CHECKER";
 export type CheckerMode = "STANDARD" | "CUSTOM_CHECKER";
 export type GenerationJobStatus = "PENDING" | "RUNNING" | "COMPLETED" | "FAILED" | "CANCELLED";
+export type ProblemSort =
+  | "newest"
+  | "oldest"
+  | "title"
+  | "difficulty"
+  | "acceptance"
+  | "submissions"
+  | "solved"
+  | "frequency";
+export type SolutionVisibility = "PUBLIC" | "PRIVATE" | "UNLISTED";
+export type ReportTargetType = "PROBLEM" | "SUBMISSION" | "DISCUSSION" | "COMMENT" | "SOLUTION" | "USER";
+export type ModerationStatus = "OPEN" | "TRIAGED" | "RESOLVED" | "DISMISSED";
+export type BackupStatus = "RUNNING" | "COMPLETED" | "FAILED";
+export type HealthStatus = "HEALTHY" | "DEGRADED" | "DOWN";
 
 export interface ApiResponse<T> {
   success: boolean;
@@ -50,6 +64,8 @@ export interface User {
   createdAt?: string;
 }
 
+export type PublicUserProfile = Omit<User, "email">;
+
 export interface AuthResult {
   user: User;
   tokens: {
@@ -62,6 +78,23 @@ export interface Tag {
   id: string;
   name: string;
   slug: string;
+}
+
+export interface Company {
+  id: string;
+  name: string;
+  slug: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface ProblemCompany {
+  id: string;
+  problemId: string;
+  companyId: string;
+  frequency: number;
+  isFeatured: boolean;
+  company: Company;
 }
 
 export interface TestCase {
@@ -266,6 +299,134 @@ export interface Problem {
   checkerMode?: CheckerMode;
   timeLimitMs: number;
   memoryLimitMb: number;
+  totalSubmissions?: number;
+  acceptedSubmissions?: number;
+  solvedCount?: number;
+  acceptanceRate?: number;
+  frequency?: number;
+  companies?: ProblemCompany[];
+}
+
+export interface DailyChallenge {
+  date: string;
+  problem: Problem | null;
+  completion?: DailyChallengeCompletion | null;
+  rewardXp?: number;
+}
+
+export interface DailyChallengeCompletion {
+  id: string;
+  challengeId: string;
+  userId: string;
+  problemId: string;
+  submissionId?: string | null;
+  completedAt: string;
+  xpAwarded: number;
+}
+
+export interface ProblemSetSummary {
+  id?: string;
+  slug: string;
+  title: string;
+  description: string;
+  visibility?: "PUBLIC" | "PRIVATE" | "ARCHIVED";
+  totalProblems: number;
+  solvedCount: number;
+  progressPercent: number;
+}
+
+export interface ProblemSetDetail extends ProblemSetSummary {
+  problems: Problem[];
+}
+
+export interface ProblemRecommendation {
+  problem: Problem | null;
+  reason: string;
+  recommendedTag: string | null;
+}
+
+export interface StudyPlanSummary {
+  id?: string;
+  slug: string;
+  title: string;
+  description: string;
+  badge?: string | null;
+  visibility?: "PUBLIC" | "PRIVATE" | "ARCHIVED";
+  totalProblems: number;
+  solvedCount: number;
+  progressPercent: number;
+  dailyUnlockCount: number;
+  unlockedCount: number;
+  todayProblem: Problem | null;
+  progress?: LearningCollectionProgress | null;
+}
+
+export interface StudyPlanProblem extends Problem {
+  locked?: boolean;
+}
+
+export interface StudyPlanDetail extends StudyPlanSummary {
+  problems: StudyPlanProblem[];
+}
+
+export type LearningCollectionType = "STUDY_PLAN" | "CURATED_LIST";
+
+export interface LearningCollectionProgress {
+  id: string;
+  collectionId: string;
+  userId: string;
+  startedAt: string;
+  lastViewedAt: string;
+  unlockedCount: number;
+  completedCount: number;
+  completedAt?: string | null;
+}
+
+export interface LearningCollection {
+  id: string;
+  type: LearningCollectionType;
+  slug: string;
+  title: string;
+  description: string;
+  badge?: string | null;
+  dailyUnlockCount: number;
+  visibility: "PUBLIC" | "PRIVATE" | "ARCHIVED";
+  createdById?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  items?: Array<{ id: string; collectionId: string; problemId: string; order: number; note?: string | null; problem?: Problem }>;
+  progress?: LearningCollectionProgress | null;
+}
+
+export interface BadgeDefinition {
+  id: string;
+  key: string;
+  name: string;
+  description: string;
+  icon?: string | null;
+  triggerType: string;
+  triggerValue: number;
+  isActive: boolean;
+  createdById?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface UserBadge {
+  id: string;
+  userId: string;
+  badgeId: string;
+  sourceType?: string | null;
+  sourceId?: string | null;
+  awardedAt: string;
+  badge?: BadgeDefinition;
+}
+
+export interface RevisionQueue {
+  title: string;
+  reason: string;
+  totalProblems: number;
+  problems: Problem[];
 }
 
 export interface RunResult {
@@ -331,7 +492,22 @@ export interface Contest {
   endTime: string;
   status: "UPCOMING" | "LIVE" | "ENDED";
   visibility?: "PUBLIC" | "PRIVATE" | "ARCHIVED";
+  freezeStartsAt?: string | null;
+  isRated?: boolean;
+  ratingSeason?: string | null;
+  ratingScheduledAt?: string | null;
+  ratingsPublishedAt?: string | null;
   problems: Array<{ problemId: string; order: number; points: number }>;
+}
+
+export interface ContestAnnouncement {
+  id: string;
+  contestId: string;
+  title: string;
+  content: string;
+  createdById?: string | null;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface LeaderboardRow {
@@ -345,6 +521,14 @@ export interface LeaderboardRow {
   acceptedSubmissions: number;
   acceptanceRate?: number;
   penaltyMinutes?: number;
+}
+
+export interface ProblemLeaderboardRow {
+  rank: number;
+  user: Pick<User, "id" | "username" | "displayName" | "avatarUrl">;
+  runtimeMs: number;
+  memoryKb: number;
+  submittedAt: string;
 }
 
 export interface UserStats {
@@ -374,7 +558,16 @@ export interface Discussion {
   downvotes?: number;
   createdAt: string;
   updatedAt?: string;
-  comments: Array<{ id: string; content: string; upvotes: number; createdAt: string; authorId?: string }>;
+  comments: Array<{
+    id: string;
+    content: string;
+    upvotes: number;
+    helpfulVotes?: number;
+    isAcceptedAnswer?: boolean;
+    isHelpfulByMe?: boolean;
+    createdAt: string;
+    authorId?: string;
+  }>;
 }
 
 export interface Editorial {
@@ -386,6 +579,34 @@ export interface Editorial {
   publishedAt?: string | null;
   createdAt: string;
   updatedAt: string;
+  sections?: EditorialSection[];
+  officialSolutions?: EditorialOfficialSolution[];
+}
+
+export interface EditorialSection {
+  id: string;
+  editorialId: string;
+  type: "TEXT" | "HINT" | "SOLUTION" | "COMPLEXITY" | "DIAGRAM";
+  title: string;
+  content: string;
+  language?: string | null;
+  order: number;
+  isLocked: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface EditorialOfficialSolution {
+  id: string;
+  editorialId: string;
+  language: string;
+  code: string;
+  explanation?: string | null;
+  timeComplexity?: string | null;
+  spaceComplexity?: string | null;
+  order: number;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface Bookmark {
@@ -394,4 +615,214 @@ export interface Bookmark {
   problemId: string;
   createdAt: string;
   problem: Problem;
+}
+
+export interface Solution {
+  id: string;
+  problemId: string;
+  authorId: string;
+  submissionId?: string | null;
+  title: string;
+  content: string;
+  code: string;
+  language: string;
+  timeComplexity?: string | null;
+  spaceComplexity?: string | null;
+  visibility: SolutionVisibility;
+  upvotes: number;
+  downvotes: number;
+  isPinned: boolean;
+  createdAt: string;
+  updatedAt: string;
+  author?: Pick<User, "id" | "username" | "displayName" | "avatarUrl">;
+  problem?: Pick<Problem, "id" | "slug" | "title" | "difficulty">;
+}
+
+export interface Report {
+  id: string;
+  targetType: ReportTargetType;
+  targetId: string;
+  reporterId?: string | null;
+  reason: string;
+  details?: string | null;
+  status: ModerationStatus;
+  moderatorId?: string | null;
+  resolution?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  resolvedAt?: string | null;
+}
+
+export interface FollowStatus {
+  isFollowing: boolean;
+  followers: number;
+  following: number;
+}
+
+export interface Notification {
+  id: string;
+  userId: string;
+  actorId?: string | null;
+  type: "FOLLOW" | "DISCUSSION_REPLY" | "SOLUTION_VOTE" | "REPORT_STATUS" | "SYSTEM";
+  title: string;
+  body: string;
+  link?: string | null;
+  readAt?: string | null;
+  createdAt: string;
+}
+
+export interface AdminAuditLog {
+  id: string;
+  actorId?: string | null;
+  action: string;
+  entityType: string;
+  entityId?: string | null;
+  requestMethod?: string | null;
+  path?: string | null;
+  statusCode?: number | null;
+  outcome: "SUCCESS" | "FAILURE";
+  createdAt: string;
+}
+
+export interface AbuseAnalytics {
+  windowHours: number;
+  totalRequests: number;
+  sampledRequests: number;
+  errorRequests: number;
+  rateLimitedRequests: number;
+  averageDurationMs: number;
+  openReports: number;
+  generatedAt: string;
+  topPaths: Array<{ path: string; count: number; errors: number; avgDurationMs: number }>;
+  suspiciousUsers: Array<{ key: string; requests: number; errors: number; rateLimited: number; codeRuns: number }>;
+}
+
+export interface BackupRun {
+  id: string;
+  requestedById?: string | null;
+  status: BackupStatus;
+  filename?: string | null;
+  sizeBytes?: number | null;
+  errorMessage?: string | null;
+  startedAt: string;
+  completedAt?: string | null;
+  createdAt: string;
+}
+
+export interface QueueMetrics {
+  driver: "memory" | "bullmq";
+  waiting: number;
+  pending: number;
+  active: number;
+  delayed: number;
+  failed: number;
+  completed: number;
+  workerStatus?: "inline" | "external" | "unavailable";
+}
+
+export interface HealthCheckSnapshot {
+  id: string;
+  status: HealthStatus;
+  details: Record<string, unknown>;
+  createdAt: string;
+}
+
+export interface ProductionStatus {
+  status: HealthStatus;
+  uptimeSeconds: number;
+  timestamp: string;
+  database: { driver: "memory" | "prisma"; ok: boolean; message?: string };
+  executor: ExecutorHealthResponse;
+  redis: { configured: boolean; ok?: boolean };
+  queue: QueueMetrics;
+  reports: { open: number };
+  backups: BackupRun[];
+  snapshots: HealthCheckSnapshot[];
+  abuse: AbuseAnalytics | null;
+}
+
+export interface MonitoringAlert {
+  id: string;
+  status: "OPEN" | "ACKNOWLEDGED" | "RESOLVED";
+  severity: string;
+  source: string;
+  title: string;
+  message: string;
+  details?: Record<string, unknown> | null;
+  acknowledgedById?: string | null;
+  acknowledgedAt?: string | null;
+  resolvedById?: string | null;
+  resolvedAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ContestRatingJob {
+  id: string;
+  contestId: string;
+  requestedById?: string | null;
+  status: "SCHEDULED" | "RUNNING" | "COMPLETED" | "FAILED" | "CANCELLED";
+  scheduledAt: string;
+  startedAt?: string | null;
+  completedAt?: string | null;
+  errorMessage?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface UserRating {
+  id: string;
+  userId: string;
+  rating: number;
+  volatility: number;
+  contestsRated: number;
+  createdAt: string;
+  updatedAt: string;
+  user?: Pick<User, "id" | "username" | "displayName" | "avatarUrl" | "country" | "countryCode">;
+}
+
+export interface RatingEvent {
+  id: string;
+  userId: string;
+  contestId?: string | null;
+  oldRating: number;
+  newRating: number;
+  delta: number;
+  rank: number;
+  participants: number;
+  createdAt: string;
+  user?: Pick<User, "id" | "username" | "displayName" | "avatarUrl" | "country" | "countryCode">;
+}
+
+export type PracticeSessionType = "VIRTUAL_CONTEST" | "MOCK_INTERVIEW";
+export type PracticeOutcome = "SOLVED" | "REVIEW" | "SKIPPED";
+
+export interface PracticeSessionProblem {
+  id: string;
+  sessionId: string;
+  problemId: string;
+  order: number;
+  outcome?: PracticeOutcome | null;
+  secondsSpent?: number | null;
+  submissionId?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  problem?: Problem;
+}
+
+export interface PracticeSession {
+  id: string;
+  userId: string;
+  type: PracticeSessionType;
+  status: "ACTIVE" | "COMPLETED" | "CANCELLED" | "EXPIRED";
+  title: string;
+  durationSeconds: number;
+  startedAt: string;
+  finishedAt?: string | null;
+  settings?: Record<string, unknown> | null;
+  summary?: Record<string, unknown> | null;
+  createdAt: string;
+  updatedAt: string;
+  problems: PracticeSessionProblem[];
+  leaderboard?: Array<{ userId: string; solvedCount: number; penaltyMinutes: number; rank: number }>;
 }

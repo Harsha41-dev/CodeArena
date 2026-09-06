@@ -59,6 +59,11 @@ Validation errors include field-level issues:
 - `PATCH /users/me`
 - `GET /users/:username`
 - `GET /users/:username/stats`
+- `GET /users/:username/follow-status`
+- `POST /users/:username/follow`
+- `DELETE /users/:username/follow`
+- `GET /users/:username/followers`
+- `GET /users/:username/following`
 - `GET /admin/users` - admin list with search, role, and status filters.
 - `GET /admin/users/:id` - admin user detail.
 - `PATCH /admin/users/:id` - admin profile/status update.
@@ -66,11 +71,20 @@ Validation errors include field-level issues:
 - `PATCH /admin/users/:id/role` - promote/demote user.
 - `PATCH /admin/users/:id/status` - activate, deactivate, or delete user.
 
-User stats include solved counts, attempts, acceptance rate, easy/medium/hard solved counts, real current and longest streaks, language stats, and submission calendar data.
+Public user profiles omit email and password data. User stats include solved counts, attempts, acceptance rate, easy/medium/hard solved counts, real current and longest streaks, language stats, and submission calendar data.
+Follows are persisted server-side and return follower/following counts for public profile display.
 
 ## Problems
 
+- `GET /daily-challenge`
+- `GET /recommendations/next`
+- `GET /problem-sets`
+- `GET /problem-sets/:slug`
+- `GET /study-plans`
+- `GET /study-plans/:slug`
+- `GET /revision-queue`
 - `GET /problems`
+- `GET /admin/problems`
 - `GET /problems/:slug`
 - `GET /problems/:slug/languages`
 - `POST /problems`
@@ -79,8 +93,17 @@ User stats include solved counts, attempts, acceptance rate, easy/medium/hard so
 - `GET /problems/:slug/submissions`
 - `GET /problems/:slug/editorial`
 - `GET /problems/:slug/discussions`
+- `GET /problems/:slug/solutions`
+- `POST /problems/:slug/solutions`
 
-Public problem endpoints return only public problems. Admin problem routes can create private drafts and archive existing problems.
+Public problem endpoints return only public problems. `GET /admin/problems` is admin-only and can list public, private draft, and archived problems, with an optional `visibility` filter. Admin problem routes can create private drafts and archive existing problems.
+
+`GET /problems` supports `search`, `difficulty`, `tag`, `topic`, `company`, `status`, `page`, `limit`, and `sort`.
+Sort values are `newest`, `oldest`, `title`, `difficulty`, `acceptance`, `submissions`, `solved`, and `frequency`.
+Problem rows include derived stats: `totalSubmissions`, `acceptedSubmissions`, `solvedCount`, `acceptanceRate`, and `frequency`.
+Authenticated `GET /problems/:slug` responses include the user's `status` for that problem.
+The daily challenge is deterministic per UTC date. Curated problem sets, study plans, revision queues, and next-problem
+recommendations are derived from public problems and the requesting user's solved status when authenticated.
 
 ## Languages
 
@@ -197,8 +220,16 @@ Official custom-checker judging executes user code first. If user execution succ
 - `GET /submissions/:id`
 - `GET /submissions/:id/events`
 - `GET /submissions`
+- `POST /admin/submissions/:id/rejudge`
+- `POST /admin/submissions/rejudge`
 
 `/run` executes only saved sample cases. `/run/custom` executes a single custom input against the selected problem limits without creating a stored submission. `/submit` queues official judging against the problem's persisted sample, hidden, and generated judge cases; it never generates cases per user, login, or submission. `GET /submissions/:id` returns full sample result bodies, but normal users receive redacted bodies for non-sample judge cases; admins can inspect full hidden case result data.
+
+`/run` accepts optional `testCaseId` to run one saved sample case. Hidden cases are never selectable through this path.
+Submit responses include `queuePosition` when queue metrics are available.
+`GET /submissions` supports `problemSlug`, `status`, `language`, `dateFrom`, and `dateTo` filters and includes problem
+metadata for display when available.
+Admin rejudge endpoints clear previous case results, reset affected submissions to `PENDING`, and enqueue them again.
 
 Auth and code-execution routes have dedicated rate limits. Official submits create queued submission history; sample and custom runs do not create accepted submissions.
 
@@ -240,8 +271,11 @@ Clients should use SSE for live updates and keep `GET /submissions/:id` polling 
 - `GET /leaderboard`
 - `POST /leaderboard/snapshot` - admin endpoint to persist daily ranks for movement indicators.
 - `GET /problems/:slug/leaderboard`
+- `GET /ratings`
+- `GET /users/:username/ratings`
 
 Global leaderboard rows include solved count, accepted submissions, acceptance rate, country metadata, current rank, previous rank, movement amount, and movement direction.
+Contest ratings are persisted separately from solve-count rank and are published by admins after a contest ends.
 
 ## Contests
 
@@ -258,8 +292,13 @@ Global leaderboard rows include solved count, accepted submissions, acceptance r
 - `POST /contests/:id/register`
 - `GET /contests/:id/leaderboard`
 - `POST /contests/:id/submit`
+- `GET /contests/:id/discussions`
+- `POST /contests/:id/discussions`
 
 Public contest endpoints return public contests only. Admin contest endpoints can access draft/private contests and all contest mutations require the `ADMIN` role.
+Contest status is derived from `startTime` and `endTime` when contests are read, and contest submissions are rejected before
+the start time or after the end time.
+Contest discussions can be used for announcements, questions, and clarifications.
 
 ## Discussions
 
@@ -274,7 +313,28 @@ Public contest endpoints return public contests only. Admin contest endpoints ca
 - `DELETE /discussion-comments/:id`
 - `POST /discussions/:id/vote`
 
+`GET /discussions` and `GET /problems/:slug/discussions` support `sort=newest|top|unanswered`.
 General discussions persist with title, content, tags, author, vote counts, and comments. Problem discussions use the same model scoped by `problemId`.
+
+## Solutions
+
+- `GET /problems/:slug/solutions`
+- `POST /problems/:slug/solutions`
+- `GET /solutions/:id`
+- `PATCH /solutions/:id`
+- `DELETE /solutions/:id`
+- `POST /solutions/:id/vote`
+
+Accepted submissions can be shared as problem solutions by passing `submissionId`. Solutions support `PUBLIC`, `PRIVATE`, and `UNLISTED` visibility, upvotes/downvotes, author summaries, and optional complexity fields. Private solutions are visible only to the author and admins.
+
+## Reports And Notifications
+
+- `POST /reports`
+- `GET /notifications`
+- `PATCH /notifications/:id/read`
+- `PATCH /notifications/read-all`
+
+Reports can target problems, submissions, discussions, comments, solutions, or users. Admins triage reports through the admin report queue. Notifications are persisted for follows, solution votes, report status updates, and system events.
 
 ## Editorials
 
@@ -285,7 +345,7 @@ General discussions persist with title, content, tags, author, vote counts, and 
 - `PATCH /admin/editorials/:id/publish`
 - `PATCH /admin/editorials/:id/unpublish`
 
-Public users only receive published editorials. Admins can request drafts with `includeDraft=true`.
+Public users only receive published editorials after they have attempted the problem. Admins can request drafts with `includeDraft=true`.
 
 ## Bookmarks
 
@@ -307,5 +367,14 @@ Public users only receive published editorials. Admins can request drafts with `
 - `GET /admin/executor/capabilities` returns admin diagnostics for language/version executor support.
 - `GET /admin/executor/health` returns configured executor mode, Judge0 reachability metadata, and support counts.
 - `GET /admin/judge/queue` returns queue driver, waiting, active, delayed, failed, completed, and worker status.
-- `GET /admin/health/deep` returns API, database, submission queue, test-generation queue, Redis, and executor health in one admin-only response.
+- `GET /admin/monitoring/status` returns production health, database status, executor diagnostics, Redis/queue status, open report counts, recent backups, and abuse analytics.
+- `POST /admin/monitoring/snapshots` persists a health snapshot.
+- `GET /admin/monitoring/snapshots` lists saved health snapshots.
+- `GET /admin/reports` lists moderation reports.
+- `PATCH /admin/reports/:id` updates moderation status and resolution.
+- `GET /admin/audit-logs` lists admin mutation audit logs.
+- `GET /admin/analytics/abuse` summarizes API volume, errors, rate limits, top paths, and suspicious actors.
+- `GET /admin/backups` lists backup runs.
+- `POST /admin/backups` starts a `pg_dump` backup run and records the result.
+- `POST /admin/contests/:id/rate` publishes persistent contest ratings after the contest has ended.
 - `GET /api-docs`

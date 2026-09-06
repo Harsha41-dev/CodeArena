@@ -2,7 +2,7 @@ import { FormEvent, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useParams } from "react-router-dom";
 import { MessageCircle, MessageSquarePlus, Search, ThumbsUp, UserRound } from "lucide-react";
-import { problemsApi, socialApi } from "../services/api";
+import { contestsApi, problemsApi, socialApi } from "../services/api";
 import type { Discussion } from "../types/api";
 import { Button } from "../components/Button";
 import { EmptyState, ErrorState, LoadingState } from "../components/State";
@@ -14,7 +14,7 @@ import { formatDateTime } from "../lib/derivedStats";
 const POPULAR_TAGS = ["editorial", "debugging", "dp", "graphs", "contest", "beginner"];
 
 export function DiscussionsPage() {
-  const { slug } = useParams();
+  const { slug, id: contestId } = useParams();
   const queryClient = useQueryClient();
   const user = useAuthStore((state) => state.user);
 
@@ -22,20 +22,25 @@ export function DiscussionsPage() {
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
   const [tags, setTags] = useState("");
+  const [sort, setSort] = useState<"newest" | "top" | "unanswered">("newest");
 
   const isProblemDiscussion = Boolean(slug);
+  const isContestDiscussion = Boolean(contestId);
 
   const discussions = useQuery({
-    queryKey: ["discussions", slug, search],
+    queryKey: ["discussions", slug, contestId, search, sort],
     queryFn: () => {
       if (isProblemDiscussion) {
-        return problemsApi.discussions(slug!);
+        return problemsApi.discussions(slug!, sort);
+      }
+      if (isContestDiscussion) {
+        return contestsApi.discussions(contestId!, sort);
       }
       // general feed with optional search
       if (search.trim()) {
-        return socialApi.listDiscussions({ search: search.trim() });
+        return socialApi.listDiscussions({ search: search.trim(), sort });
       }
-      return socialApi.listDiscussions(undefined);
+      return socialApi.listDiscussions({ sort });
     }
   });
 
@@ -43,6 +48,9 @@ export function DiscussionsPage() {
     mutationFn: () => {
       if (isProblemDiscussion) {
         return socialApi.createDiscussion(slug!, { title, content });
+      }
+      if (isContestDiscussion) {
+        return contestsApi.createDiscussion(contestId!, { title, content });
       }
       // parse comma-separated tags
       const tagList = tags
@@ -60,8 +68,16 @@ export function DiscussionsPage() {
   });
 
   const visibleDiscussions = useMemo(() => {
-    return discussions.data ?? [];
-  }, [discussions.data]);
+    const list = discussions.data ?? [];
+    const needle = search.trim().toLowerCase();
+    if (!needle) {
+      return list;
+    }
+    return list.filter((discussion) => {
+      const haystack = `${discussion.title} ${discussion.content} ${(discussion.tags ?? []).join(" ")}`.toLowerCase();
+      return haystack.includes(needle);
+    });
+  }, [discussions.data, search]);
 
   function onSubmit(event: FormEvent) {
     event.preventDefault();
@@ -81,10 +97,19 @@ export function DiscussionsPage() {
     return <LoadingState label="Loading discussions" />;
   }
 
-  const pageTitle = isProblemDiscussion ? "Problem Discussions" : "Discuss";
+  let pageTitle = "Discuss";
+  if (isProblemDiscussion) {
+    pageTitle = "Problem Discussions";
+  }
+  if (isContestDiscussion) {
+    pageTitle = "Contest Clarifications";
+  }
   let pageSubtitle = "General competitive programming threads, study notes, and platform updates.";
   if (isProblemDiscussion) {
     pageSubtitle = `Ask questions and compare approaches for ${slug}.`;
+  }
+  if (isContestDiscussion) {
+    pageSubtitle = "Ask contest questions and keep clarifications in one place.";
   }
 
   return (
@@ -106,12 +131,35 @@ export function DiscussionsPage() {
               onChange={(event) => setSearch(event.target.value)}
             />
           </div>
+          <div className="flex flex-wrap gap-2">
+            {(["newest", "top", "unanswered"] as const).map((item) => (
+              <button
+                key={item}
+                className={`h-9 rounded-md border px-3 text-sm font-medium transition-colors ${
+                  sort === item
+                    ? "border-emerald-500 bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300"
+                    : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-300"
+                }`}
+                onClick={() => setSort(item)}
+              >
+                {sortLabel(item)}
+              </button>
+            ))}
+          </div>
           {isProblemDiscussion ? (
             <Link
               className="inline-flex h-9 items-center justify-center rounded-md border border-slate-300 px-3 text-sm dark:border-slate-700"
               to={`/problems/${slug}`}
             >
               Back to problem
+            </Link>
+          ) : null}
+          {isContestDiscussion ? (
+            <Link
+              className="inline-flex h-9 items-center justify-center rounded-md border border-slate-300 px-3 text-sm dark:border-slate-700"
+              to={`/contests/${contestId}`}
+            >
+              Back to contest
             </Link>
           ) : null}
         </div>
@@ -151,7 +199,7 @@ export function DiscussionsPage() {
                 value={title}
                 onChange={(event) => setTitle(event.target.value)}
               />
-              {!isProblemDiscussion ? (
+              {!isProblemDiscussion && !isContestDiscussion ? (
                 <input
                   className="ca-input w-full"
                   placeholder="Tags, comma separated"
@@ -186,6 +234,12 @@ export function DiscussionsPage() {
       </div>
     </div>
   );
+}
+
+function sortLabel(sort: "newest" | "top" | "unanswered"): string {
+  if (sort === "top") return "Top";
+  if (sort === "unanswered") return "Unanswered";
+  return "Newest";
 }
 
 function DiscussionCard({ discussion }: { discussion: Discussion }) {

@@ -1,12 +1,11 @@
-import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { useSearchParams } from "react-router-dom";
 import { submissionsApi } from "../services/api";
 import type { SubmissionStatus } from "../types/api";
 import { EmptyState, ErrorState, LoadingState } from "../components/State";
 import { FilterBar, SelectFilter } from "../components/FilterBar";
 import { SearchInput } from "../components/SearchInput";
 import { SubmissionTable } from "../components/SubmissionTable";
-import { submissionLanguageLabel } from "../lib/languages";
 
 const ALL_STATUSES: SubmissionStatus[] = [
   "PENDING",
@@ -21,61 +20,34 @@ const ALL_STATUSES: SubmissionStatus[] = [
 ];
 
 export function SubmissionsPage() {
-  const [status, setStatus] = useState("");
-  const [language, setLanguage] = useState("");
-  const [problem, setProblem] = useState("");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const status = searchParams.get("status") ?? "";
+  const language = searchParams.get("language") ?? "";
+  const problem = searchParams.get("problemSlug") ?? "";
+  const dateFrom = normalizeDateFilter(searchParams.get("dateFrom"));
+  const dateTo = normalizeDateFilter(searchParams.get("dateTo"));
+
+  const queryParams: Record<string, string> = {};
+  if (status) queryParams.status = status;
+  if (language) queryParams.language = language;
+  if (problem) queryParams.problemSlug = problem;
+  if (dateFrom) queryParams.dateFrom = `${dateFrom}T00:00:00.000Z`;
+  if (dateTo) queryParams.dateTo = `${dateTo}T23:59:59.999Z`;
 
   const submissions = useQuery({
-    queryKey: ["submissions"],
-    queryFn: submissionsApi.list
+    queryKey: ["submissions", status, language, problem, dateFrom, dateTo],
+    queryFn: () => submissionsApi.list(queryParams)
   });
 
-  // client-side filter for now
-  const filtered = useMemo(() => {
-    const list = submissions.data ?? [];
-    const result = [];
-
-    for (let i = 0; i < list.length; i++) {
-      const submission = list[i];
-      const languageLabel = submissionLanguageLabel(submission);
-
-      // status filter
-      let matchesStatus = true;
-      if (status) {
-        matchesStatus = submission.status === status;
-      }
-
-      // language filter (match label or legacy enum)
-      let matchesLanguage = true;
-      if (language) {
-        matchesLanguage = languageLabel === language || submission.language === language;
-      }
-
-      // problem text search
-      let matchesProblem = true;
-      if (problem) {
-        const title = submission.problem?.title ?? "";
-        const haystack = `${title} ${submission.problemId}`.toLowerCase();
-        matchesProblem = haystack.includes(problem.toLowerCase());
-      }
-
-      if (matchesStatus && matchesLanguage && matchesProblem) {
-        result.push(submission);
-      }
+  function setFilter(key: "status" | "language" | "problemSlug" | "dateFrom" | "dateTo", value: string) {
+    const next = new URLSearchParams(searchParams);
+    if (value) {
+      next.set(key, value);
+    } else {
+      next.delete(key);
     }
-
-    return result;
-  }, [language, problem, status, submissions.data]);
-
-  // unique language labels for the dropdown
-  const languageOptions = useMemo(() => {
-    const list = submissions.data ?? [];
-    const set = new Set<string>();
-    for (let i = 0; i < list.length; i++) {
-      set.add(submissionLanguageLabel(list[i]));
-    }
-    return Array.from(set).sort();
-  }, [submissions.data]);
+    setSearchParams(next, { replace: true });
+  }
 
   if (submissions.isLoading) {
     return <LoadingState label="Loading submissions" />;
@@ -93,10 +65,7 @@ export function SubmissionsPage() {
     }))
   ];
 
-  const languageSelectOptions = [
-    { value: "", label: "All languages" },
-    ...languageOptions.map((item) => ({ value: item, label: item }))
-  ];
+  const filtered = submissions.data ?? [];
 
   return (
     <section className="ca-panel overflow-hidden">
@@ -106,9 +75,32 @@ export function SubmissionsPage() {
           <p className="mt-1 text-sm text-slate-500">Filter verdicts, languages, problems, and submitted runs.</p>
         </div>
         <FilterBar>
-          <SearchInput value={problem} onChange={setProblem} placeholder="Problem" />
-          <SelectFilter label="Status" value={status} onChange={setStatus} options={statusOptions} />
-          <SelectFilter label="Language" value={language} onChange={setLanguage} options={languageSelectOptions} />
+          <SearchInput value={problem} onChange={(value) => setFilter("problemSlug", value)} placeholder="Problem slug" />
+          <SearchInput value={language} onChange={(value) => setFilter("language", value)} placeholder="Language" />
+          <SelectFilter
+            label="Status"
+            value={status}
+            onChange={(value) => setFilter("status", value)}
+            options={statusOptions}
+          />
+          <label className="flex items-center gap-2 text-sm">
+            <span className="sr-only">From date</span>
+            <input
+              className="ca-input"
+              type="date"
+              value={dateFrom}
+              onChange={(event) => setFilter("dateFrom", event.target.value)}
+            />
+          </label>
+          <label className="flex items-center gap-2 text-sm">
+            <span className="sr-only">To date</span>
+            <input
+              className="ca-input"
+              type="date"
+              value={dateTo}
+              onChange={(event) => setFilter("dateTo", event.target.value)}
+            />
+          </label>
         </FilterBar>
       </div>
 
@@ -121,4 +113,11 @@ export function SubmissionsPage() {
       )}
     </section>
   );
+}
+
+function normalizeDateFilter(value: string | null): string {
+  if (!value) {
+    return "";
+  }
+  return value.slice(0, 10);
 }

@@ -2,7 +2,7 @@ import type { ErrorRequestHandler } from "express";
 import { ApiError } from "../errors/ApiError";
 import { logger } from "../config/logger";
 
-// last middleware — turns thrown errors into JSON responses
+// last middleware - turns thrown errors into JSON responses
 export const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
   if (err instanceof ApiError) {
     res.status(err.statusCode).json({
@@ -16,7 +16,7 @@ export const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
     return;
   }
 
-  // unexpected errors — don't leak stack to client
+  // unexpected errors - don't leak stack to client
   logger.error({ err }, "Unhandled API error");
   res.status(500).json({
     success: false,
