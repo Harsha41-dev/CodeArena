@@ -5,6 +5,11 @@ const config: Config = {
   darkMode: "class",
   theme: {
     extend: {
+      fontFamily: {
+        sans: ["Outfit", "ui-sans-serif", "system-ui", "sans-serif"],
+        serif: ["Instrument Serif", "Times New Roman", "serif"],
+        mono: ["IBM Plex Mono", "ui-monospace", "SFMono-Regular", "monospace"]
+      },
       colors: {
         surface: {
           50: "var(--ca-bg)",
@@ -22,10 +27,15 @@ const config: Config = {
           500: "var(--ca-warn)"
         }
       },
+      borderRadius: {
+        xl: "1.25rem",
+        "2xl": "1.5rem",
+        "3xl": "1.75rem"
+      },
       boxShadow: {
-        panel: "0 1px 3px 0 rgba(0, 0, 0, 0.05), 0 1px 2px -1px rgba(0, 0, 0, 0.05)",
-        card: "0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -2px rgba(0, 0, 0, 0.05)",
-        float: "0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.1)"
+        panel: "none",
+        card: "none",
+        float: "none"
       }
     }
   },

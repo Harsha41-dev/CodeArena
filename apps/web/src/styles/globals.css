@@ -2,74 +2,57 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  color-scheme: light;
-  --ca-bg: #f4f4f5; /* zinc-100 */
-  --ca-bg-image: url("/assets/bg-light.png");
-  --ca-panel: #ffffff; /* white */
-  --ca-panel-muted: #fafafa; /* zinc-50 */
-  --ca-border: #e4e4e7; /* zinc-200 */
-  --ca-text: #09090b; /* zinc-950 */
-  --ca-muted: #71717a; /* zinc-500 */
-
-  /* Primary Accent: Emerald */
-  --ca-accent: #10b981; /* emerald-500 */
-  --ca-accent-strong: #059669; /* emerald-600 */
-
-  /* Semantic Colors */
-  --ca-info: #3b82f6; /* blue-500 */
-  --ca-success: #10b981; /* emerald-500 */
-  --ca-warn: #f59e0b; /* amber-500 */
-  --ca-danger: #ef4444; /* red-500 */
-
-  --ca-ring: rgba(16, 185, 129, 0.2);
-}
-
+:root,
 .dark {
   color-scheme: dark;
-  --ca-bg: #09090b; /* zinc-950 */
-  --ca-bg-image: url("/assets/bg-dark.png");
-  --ca-panel: #18181b; /* zinc-900 */
-  --ca-panel-muted: #111113; /* custom deep zinc */
-  --ca-border: #27272a; /* zinc-800 */
-  --ca-text: #fafafa; /* zinc-50 */
-  --ca-muted: #a1a1aa; /* zinc-400 */
-
-  /* Primary Accent: Emerald */
-  --ca-accent: #10b981; /* emerald-500 */
-  --ca-accent-strong: #34d399; /* emerald-400 */
-
-  /* Semantic Colors */
-  --ca-info: #60a5fa; /* blue-400 */
-  --ca-success: #34d399; /* emerald-400 */
-  --ca-warn: #fbbf24; /* amber-400 */
-  --ca-danger: #f87171; /* red-400 */
-
-  --ca-ring: rgba(16, 185, 129, 0.2);
+  --ca-bg: #07080a;
+  --ca-bg-image: none;
+  --ca-panel: #101216;
+  --ca-panel-muted: #181c22;
+  --ca-border: #252a32;
+  --ca-text: #e8eaee;
+  --ca-muted: #9aa1ac;
+  --ca-accent: #7dcfb6;
+  --ca-accent-strong: #7dcfb6;
+  --ca-info: #7dcfb6;
+  --ca-success: #6fbf9a;
+  --ca-warn: #c4a574;
+  --ca-danger: #c97a72;
+  --ca-ring: rgba(125, 207, 182, 0.28);
+  --ca-mint-fg: #06211b;
+  --ca-mint-dim: #14332c;
 }
 
 * {
   box-sizing: border-box;
 }
 
+html {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
 body {
   margin: 0;
   background-color: var(--ca-bg);
-  background-image: var(--ca-bg-image);
-  background-size: cover;
-  background-position: center;
-  background-attachment: fixed;
   color: var(--ca-text);
-  font-family:
-    Inter,
-    ui-sans-serif,
-    system-ui,
-    -apple-system,
-    BlinkMacSystemFont,
-    "Segoe UI",
-    sans-serif;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+  font-family: Outfit, ui-sans-serif, system-ui, sans-serif;
+}
+
+h1,
+h2,
+h3 {
+  font-family: "Instrument Serif", "Times New Roman", serif;
+  text-wrap: balance;
+}
+
+p {
+  text-wrap: pretty;
+}
+
+button:not(:disabled),
+[role="button"]:not(:disabled) {
+  cursor: pointer;
 }
 
 button,
@@ -79,12 +62,27 @@ textarea {
   font: inherit;
 }
 
+pre,
+code,
+.font-mono {
+  font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
 pre {
   white-space: pre-wrap;
   word-break: break-word;
 }
 
-/* Custom Scrollbar */
+::selection {
+  background: color-mix(in oklab, var(--ca-accent) 35%, transparent);
+  color: var(--ca-text);
+}
+
+:focus-visible {
+  outline: 2px solid var(--ca-accent);
+  outline-offset: 2px;
+}
+
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
@@ -102,46 +100,36 @@ pre {
 
 @layer components {
   .ca-panel {
-    @apply rounded-xl border border-slate-200/80 bg-white shadow-sm dark:border-white/10 dark:bg-[#111113] dark:shadow-none;
+    @apply rounded-[28px] border border-[#252a32] bg-[#101216] shadow-none;
   }
 
   .ca-muted-panel {
-    @apply rounded-xl border border-slate-200/80 bg-slate-50/50 dark:border-white/10 dark:bg-white/5;
+    @apply rounded-[28px] border border-[#252a32] bg-[#181c22];
   }
 
   .ca-input {
-    @apply h-9 w-full rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-900 outline-none transition-colors placeholder:text-slate-400 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-50 dark:border-white/10 dark:bg-black/20 dark:text-slate-100 dark:placeholder:text-slate-500 dark:focus:border-emerald-500;
+    @apply h-11 w-full rounded-full border border-[#252a32] bg-[#101216] px-4 py-1.5 text-sm text-[#e8eaee] outline-none transition-colors placeholder:text-[#9aa1ac] focus:border-[#7dcfb6] focus:ring-2 focus:ring-[#7dcfb6]/20 disabled:cursor-not-allowed disabled:opacity-50;
   }
 
   select.ca-input option,
   select.ca-input optgroup {
-    background-color: #ffffff;
-    color: #0f172a;
+    background-color: #101216;
+    color: #e8eaee;
   }
 
   select.ca-input option:disabled {
-    color: #94a3b8;
-  }
-
-  .dark select.ca-input option,
-  .dark select.ca-input optgroup {
-    background-color: #0f172a;
-    color: #e2e8f0;
-  }
-
-  .dark select.ca-input option:disabled {
-    color: #64748b;
+    color: #9aa1ac;
   }
 
   .ca-textarea {
-    @apply w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition-colors placeholder:text-slate-400 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-50 dark:border-white/10 dark:bg-black/20 dark:text-slate-100 dark:placeholder:text-slate-500 dark:focus:border-emerald-500;
+    @apply w-full rounded-2xl border border-[#252a32] bg-[#101216] px-4 py-3 text-sm text-[#e8eaee] outline-none transition-colors placeholder:text-[#9aa1ac] focus:border-[#7dcfb6] focus:ring-2 focus:ring-[#7dcfb6]/20 disabled:cursor-not-allowed disabled:opacity-50;
   }
 
   .ca-table-head {
-    @apply bg-slate-50/50 text-xs font-semibold uppercase tracking-wider text-slate-500 dark:bg-white/5 dark:text-slate-400;
+    @apply bg-transparent text-xs font-medium tracking-wider text-[#9aa1ac];
   }
 
   .ca-table-row {
-    @apply border-b border-slate-100 transition-colors hover:bg-slate-50/50 dark:border-white/5 dark:hover:bg-white/5;
+    @apply border-b border-[#252a32] transition-colors hover:bg-[#101216];
   }
 }

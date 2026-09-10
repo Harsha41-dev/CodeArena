@@ -1,12 +1,11 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
-import { ArrowRight, BarChart3, CalendarClock, Code2, Flame, Trophy, UsersRound } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 import { contestsApi, leaderboardApi, problemsApi, submissionsApi } from "../services/api";
 import { Button } from "../components/Button";
 import { ContestCard } from "../components/ContestCard";
 import { DifficultyBadge } from "../components/DifficultyBadge";
 import { LeaderboardTable } from "../components/LeaderboardTable";
-import { StatsCard } from "../components/StatsCard";
 import { EmptyState } from "../components/State";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/Card";
 
@@ -31,7 +30,6 @@ export function LandingPage() {
     queryFn: leaderboardApi.global
   });
 
-  // submissions need auth - if guest, this just fails and we show "Login"
   const submissions = useQuery({
     queryKey: ["landing-submissions"],
     queryFn: () => submissionsApi.list(),
@@ -42,129 +40,109 @@ export function LandingPage() {
   const daily = dailyChallenge.data?.problem ?? (problemList.length > 0 ? problemList[0] : undefined);
   const popular = problemList.filter((problem) => problem.id !== daily?.id).slice(0, 4);
   const upcoming = (contests.data ?? []).slice(0, 2);
+  const live = (contests.data ?? []).find((contest) => contest.status === "LIVE");
 
-  let submissionCount: number | string = "Login";
+  let submissionCount: number | string = "—";
   if (submissions.data) {
     submissionCount = submissions.data.length;
   }
 
   return (
-    <div className="mx-auto max-w-6xl space-y-8">
-      <section className="relative overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-slate-200/80 dark:bg-[#111113] dark:ring-white/10">
-        <div className="absolute inset-0 bg-gradient-to-br from-emerald-500/5 via-transparent to-emerald-500/5 dark:from-emerald-500/10 dark:to-transparent" />
-        <div className="relative grid gap-8 p-8 lg:grid-cols-[1.3fr_0.9fr] lg:p-12">
-          <div className="flex flex-col justify-center">
-            <div className="inline-flex w-fit items-center gap-2 rounded-full border border-amber-200/50 bg-amber-50/50 px-3 py-1 text-sm font-medium text-amber-700 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-400">
-              <Flame className="h-4 w-4 text-amber-500" />
-              Personal project — still growing
-            </div>
-            <h1 className="mt-6 text-4xl font-bold tracking-tight text-slate-900 sm:text-5xl dark:text-white">
-              Practice DSA. <br /> Run contests. <br /> See your progress.
-            </h1>
-            <p className="mt-4 max-w-xl text-lg text-slate-600 dark:text-slate-400">
-              CodeArena is a coding platform I built to learn online judges — problems, submissions, contests, and a bit
-              of community stuff.
+    <div className="space-y-10">
+      <section className="grid gap-8 lg:grid-cols-[1.2fr_0.8fr]">
+        <div>
+          {live ? (
+            <p className="inline-flex items-center gap-2 font-mono text-[11px] uppercase tracking-widest text-[#7dcfb6]">
+              <span className="size-1.5 animate-pulse rounded-full bg-[#7dcfb6]" />
+              Live · {live.title}
             </p>
-            <div className="mt-8 flex flex-wrap gap-4">
-              <Link to="/problems">
-                <Button className="h-11 px-6 text-base">
-                  <Code2 className="h-5 w-5" /> Browse problems
-                </Button>
-              </Link>
-              <Link to="/contests">
-                <Button variant="secondary" className="h-11 px-6 text-base">
-                  <Trophy className="h-5 w-5" /> Contests
-                </Button>
-              </Link>
+          ) : (
+            <p className="font-mono text-[11px] uppercase tracking-widest text-[#9aa1ac]">Daily practice</p>
+          )}
+          <h1 className="mt-3 font-serif text-4xl leading-tight sm:text-5xl">
+            Practice DSA.
+            <br />
+            Run contests.
+            <br />
+            Watch the rating move.
+          </h1>
+          <p className="mt-4 max-w-lg text-sm leading-relaxed text-[#9aa1ac]">
+            An online judge with a queue, a worker, and a workspace that takes the problem seriously. Submit as if the
+            worker is on the other side of Redis — because it is.
+          </p>
+          <div className="mt-6 flex flex-wrap gap-3">
+            <Link to="/problems">
+              <Button>Browse problems</Button>
+            </Link>
+            <Link to="/contests">
+              <Button variant="secondary">Contests</Button>
+            </Link>
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          {[
+            { l: "Problems", v: String(problemList.length) },
+            { l: "Submissions", v: String(submissionCount) },
+            { l: "On the board", v: String(leaderboard.data?.length ?? 0) },
+            { l: "Rated rounds", v: String(contests.data?.length ?? 0) }
+          ].map((stat) => (
+            <div key={stat.l} className="rounded-[28px] border border-[#252a32] bg-[#101216] p-5">
+              <p className="text-xs text-[#9aa1ac]">{stat.l}</p>
+              <p className="mt-2 font-serif text-3xl tabular-nums">{stat.v}</p>
             </div>
-          </div>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <StatsCard icon={Code2} label="Problems" value={problemList.length} hint="from seed data" />
-            <StatsCard
-              icon={UsersRound}
-              label="On leaderboard"
-              value={leaderboard.data?.length ?? 0}
-              hint="demo users"
-            />
-            <StatsCard icon={BarChart3} label="Your submissions" value={submissionCount} hint="login to see" />
-            <StatsCard
-              icon={CalendarClock}
-              label="Contests"
-              value={contests.data?.length ?? 0}
-              hint="upcoming / live / past"
-            />
-          </div>
+          ))}
         </div>
       </section>
 
-      <section className="grid gap-6 lg:grid-cols-[1fr_1fr]">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between py-4">
-            <CardTitle>Daily Challenge</CardTitle>
-            <Link
-              className="text-sm font-medium text-emerald-600 hover:text-emerald-700 dark:text-emerald-400 dark:hover:text-emerald-300"
-              to={daily ? `/problems/${daily.slug}` : "/problems"}
-            >
-              Open
+      <section className="grid gap-4 lg:grid-cols-2">
+        <article className="rounded-[28px] border border-[#252a32] bg-[#101216] p-6">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-medium">Daily challenge</h2>
+            {daily ? <DifficultyBadge difficulty={daily.difficulty} /> : null}
+          </div>
+          {daily ? (
+            <>
+              <h3 className="mt-4 font-serif text-2xl">{daily.title}</h3>
+              <p className="mt-2 line-clamp-3 text-sm text-[#9aa1ac]">{daily.description}</p>
+              <Link
+                to={`/problems/${daily.slug}`}
+                className="mt-5 inline-flex items-center gap-2 text-sm text-[#7dcfb6]"
+              >
+                Solve now <ArrowRight className="size-4" />
+              </Link>
+            </>
+          ) : (
+            <EmptyState title="No challenge available" />
+          )}
+        </article>
+        <article className="rounded-[28px] border border-[#252a32] bg-[#101216] p-6">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-medium">Popular</h2>
+            <Link className="text-sm text-[#7dcfb6]" to="/problems">
+              Catalog
             </Link>
-          </CardHeader>
-          <CardContent className="pt-2">
-            {daily ? (
-              <div>
-                <div className="flex flex-wrap items-center gap-3">
-                  <h3 className="text-lg font-semibold text-slate-900 dark:text-white">{daily.title}</h3>
-                  <DifficultyBadge difficulty={daily.difficulty} />
-                </div>
-                <p className="mt-2 line-clamp-2 text-sm text-slate-500 dark:text-slate-400">{daily.description}</p>
-                <Link
-                  to={`/problems/${daily.slug}`}
-                  className="mt-6 inline-flex items-center gap-2 text-sm font-medium text-emerald-600 hover:text-emerald-700 dark:text-emerald-400 dark:hover:text-emerald-300"
-                >
-                  Solve challenge <ArrowRight className="h-4 w-4" />
-                </Link>
-              </div>
-            ) : (
-              <EmptyState title="No challenge available" />
-            )}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between py-4">
-            <CardTitle>Popular Problems</CardTitle>
-            <Link
-              className="text-sm font-medium text-emerald-600 hover:text-emerald-700 dark:text-emerald-400 dark:hover:text-emerald-300"
-              to="/problems"
-            >
-              View all
-            </Link>
-          </CardHeader>
-          <CardContent className="p-0">
-            <div className="divide-y divide-slate-100 dark:divide-white/5">
-              {popular.map((problem) => (
-                <Link
-                  key={problem.id}
-                  to={`/problems/${problem.slug}`}
-                  className="flex items-center justify-between gap-3 p-4 transition-colors hover:bg-slate-50/50 dark:hover:bg-white/5"
-                >
-                  <span className="font-medium text-slate-700 dark:text-slate-300">{problem.title}</span>
-                  <DifficultyBadge difficulty={problem.difficulty} />
-                </Link>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
+          </div>
+          <div className="mt-4 divide-y divide-[#252a32]">
+            {popular.map((problem) => (
+              <Link
+                key={problem.id}
+                to={`/problems/${problem.slug}`}
+                className="flex items-center justify-between gap-3 py-3"
+              >
+                <span>{problem.title}</span>
+                <DifficultyBadge difficulty={problem.difficulty} />
+              </Link>
+            ))}
+          </div>
+        </article>
       </section>
 
-      <section className="grid gap-6 xl:grid-cols-[1fr_1fr]">
+      <section className="grid gap-6 xl:grid-cols-2">
         <div className="space-y-4">
           <div className="flex items-center justify-between px-1">
-            <h2 className="font-semibold text-slate-900 dark:text-white">Upcoming Contests</h2>
-            <Link
-              className="text-sm font-medium text-emerald-600 hover:text-emerald-700 dark:text-emerald-400 dark:hover:text-emerald-300"
-              to="/contests"
-            >
-              Contest archive
+            <h2 className="font-serif text-2xl">Contests</h2>
+            <Link className="text-sm text-[#7dcfb6]" to="/contests">
+              All rounds
             </Link>
           </div>
           {upcoming.length === 0 ? <EmptyState title="No contests right now" /> : null}
@@ -174,15 +152,19 @@ export function LandingPage() {
         </div>
         <div className="space-y-4">
           <div className="flex items-center justify-between px-1">
-            <h2 className="font-semibold text-slate-900 dark:text-white">Leaderboard</h2>
-            <Link
-              className="text-sm font-medium text-emerald-600 hover:text-emerald-700 dark:text-emerald-400 dark:hover:text-emerald-300"
-              to="/leaderboard"
-            >
-              Full rankings
+            <h2 className="font-serif text-2xl">Leaderboard</h2>
+            <Link className="text-sm text-[#7dcfb6]" to="/leaderboard">
+              Full board
             </Link>
           </div>
-          <LeaderboardTable rows={(leaderboard.data ?? []).slice(0, 5)} />
+          <Card>
+            <CardHeader className="border-0 py-4">
+              <CardTitle>Global</CardTitle>
+            </CardHeader>
+            <CardContent className="pt-0">
+              <LeaderboardTable rows={(leaderboard.data ?? []).slice(0, 5)} />
+            </CardContent>
+          </Card>
         </div>
       </section>
     </div>

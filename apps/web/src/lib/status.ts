@@ -2,22 +2,22 @@ import type { Difficulty, SubmissionStatus } from "../types/api";
 
 export function difficultyClass(difficulty: Difficulty): string {
   if (difficulty === "EASY") {
-    return "bg-emerald-500/10 text-emerald-700 border-emerald-500/20 dark:text-emerald-400";
+    return "bg-[#6fbf9a]/12 text-[#6fbf9a] border-transparent";
   }
   if (difficulty === "MEDIUM") {
-    return "bg-amber-500/10 text-amber-700 border-amber-500/20 dark:text-amber-400";
+    return "bg-[#c4a574]/12 text-[#c4a574] border-transparent";
   }
-  return "bg-rose-500/10 text-rose-700 border-rose-500/20 dark:text-rose-400";
+  return "bg-[#c97a72]/12 text-[#c97a72] border-transparent";
 }
 
 export function verdictClass(status: SubmissionStatus | string): string {
   if (status === "ACCEPTED") {
-    return "bg-emerald-500/10 text-emerald-700 border-emerald-500/20 dark:text-emerald-400";
+    return "bg-[#6fbf9a]/12 text-[#6fbf9a] border-transparent";
   }
   if (status === "PENDING" || status === "RUNNING") {
-    return "bg-sky-500/10 text-sky-700 border-sky-500/20 dark:text-sky-400";
+    return "bg-[#14332c] text-[#7dcfb6] border-transparent";
   }
-  return "bg-rose-500/10 text-rose-700 border-rose-500/20 dark:text-rose-400";
+  return "bg-[#c97a72]/12 text-[#c97a72] border-transparent";
 }
 
 // WRONG_ANSWER -> Wrong Answer

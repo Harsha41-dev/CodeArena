@@ -12,7 +12,7 @@ export function Card({ children, className, ...props }: PropsWithChildren<HTMLAt
 export function CardHeader({ children, className, ...props }: PropsWithChildren<HTMLAttributes<HTMLDivElement>>) {
   return (
     <div
-      className={clsx("flex flex-col space-y-1.5 p-5 border-b border-slate-100 dark:border-white/5", className)}
+      className={clsx("flex flex-col space-y-1.5 p-5 border-b border-[#252a32]", className)}
       {...props}
     >
       {children}
@@ -23,7 +23,7 @@ export function CardHeader({ children, className, ...props }: PropsWithChildren<
 export function CardTitle({ children, className, ...props }: PropsWithChildren<HTMLAttributes<HTMLHeadingElement>>) {
   return (
     <h3
-      className={clsx("font-semibold leading-none tracking-tight text-slate-900 dark:text-slate-100", className)}
+      className={clsx("font-serif text-xl leading-none tracking-tight text-[#e8eaee]", className)}
       {...props}
     >
       {children}
