@@ -1,106 +1,149 @@
 # CodeArena
 
-CodeArena is a full-stack online judge project I built as a learning project during B.Tech.
-It is inspired by platforms like LeetCode and Codeforces, but the goal was not to clone them.
-I wanted to understand how the main pieces of an online judge work together: problem statements,
-code editor, submissions, queues, workers, test cases, contests, and verdicts.
+I built CodeArena because I wanted to understand how an online judge actually works — not just a problem list and an editor, but the path a submission takes from the workspace to a verdict.
 
-## Tech Stack
+It is inspired by platforms like LeetCode and Codeforces. I did not try to clone them. I wanted the pieces to be real: a catalog, a workspace, a queue, a worker that never runs inside the API process, contests with a live window, and a rating board.
 
-- Frontend: React, Vite, TypeScript, Tailwind CSS, Monaco Editor
-- Backend: Node.js, Express, TypeScript, Prisma
-- Database: PostgreSQL
-- Queue: Redis with BullMQ
-- Code execution: Judge0, Docker executor, and mock executor for tests
-- Other: JWT auth, Zod validation, Swagger docs, Pino logs
+<img src="docs/screenshots/home.png" alt="CodeArena home with daily challenge, live contest, and catalog stats" width="100%" />
 
-## Features Implemented
+This is the home screen. When a round is open, the live contest sits on the right. The daily challenge is the problem I would open first.
 
-- User register, login, refresh token, and logout
-- Problem list with filters, tags, difficulty, and status
-- Problem stats with acceptance rate, solved count, submission count, and richer sorting
-- Daily challenge, curated practice sets, and next-problem recommendation
-- Study plans with ordered problems, daily unlock metadata, badges, and revision queue
-- Problem workspace with statement, resizable panels, Monaco editor, sample run, custom input, and submit
-- Editor settings for theme, font size, tab size, word wrap, minimap, reset code, and visible autosave
-- Workspace tabs for description, editorial, submissions, solutions, discussions, and notes
-- Editorials unlock after a logged-in user attempts the problem, while admins can still preview drafts
-- Active sample test-case runs from the workspace
-- Queued submissions with `PENDING`, `RUNNING`, and final verdict states
-- Live submission status using Server-Sent Events, with polling fallback
-- Redis pub/sub-backed live submission events when `REDIS_URL` is configured
-- Submission history filters for problem, verdict, language, and date range
-- Submission detail comparison with a previous attempt and approximate runtime/memory percentile
-- Accepted submission sharing into persisted problem solution posts with visibility controls and voting
-- Multiple language support from database catalog
-- Judge0 language sync support
-- Admin problem creation with sample and hidden test cases
-- Admin problem catalog includes public, private draft, and archived states
-- Custom checkers for problems where exact output matching is not enough
-- Test-case generation using generator and reference solution scripts
-- Contests, contest registration, upsolve behavior, leaderboard, and clarification threads
-- Contest submissions are accepted only during the live contest window
-- Virtual contest and mock interview practice pages with topic/company filters and local reports
-- Global leaderboard and problem leaderboard
-- Public/profile pages, badges, country/global rank signals, rating history, topic strength views, linked submission calendar, activity feed, and persistent follow state
-- Persistent notifications for follows, solution votes, and report updates
-- Discussions, comments, votes, markdown rendering, sorting, report flow, bookmarks, notes, and editorials
-- Admin user, language, contest, problem preview, testcase validation, and monitoring pages
-- Admin launch analytics for sampled submissions, accepted rate, judge errors, API abuse/rate patterns, and suspicious actors
-- Admin moderation/report queues, audit logs, backup runs, production health snapshots, and contest rating publishing
-- Configurable API telemetry retention for abuse analytics
-- Admin rejudge controls for one submission or filtered error batches
-- Swagger API docs at `/api-docs`
-- Docker compose setup for local services
+## Solving a problem
 
-## Judge Modes
+The catalog is filterable by difficulty, tag, and unsolved. Each row shows acceptance, frequency, and whether I have already got AC on it.
 
-| Mode     | Use case                                                            |
-| -------- | ------------------------------------------------------------------- |
-| `mock`   | Used in tests and demo paths. It does not really execute user code. |
-| `docker` | Runs code locally inside Docker containers.                         |
-| `judge0` | Runs code through Judge0. This is the main real-execution mode.     |
+<img src="docs/screenshots/problems.png" alt="Problem catalog with difficulty filters and solved status" width="100%" />
 
-## Project Structure
+The workspace is the screen I spend the most time on. Statement, examples, and constraints on the left. Editor, language, sample I/O, Run, and Submit on the right. Panels resize so I can give the statement or the editor more room.
+
+<img src="docs/screenshots/workspace.png" alt="Problem workspace with statement, editor, and sample tests" width="100%" />
+
+Run checks the visible samples. Submit goes through the queue: `PENDING` → `RUNNING` → a final verdict. User code is never executed inside the Express request.
+
+<img src="docs/screenshots/accepted.png" alt="Accepted verdict after submitting Two Sum" width="100%" />
+
+Every attempt is kept. I can filter history, open a previous run, and compare it with the one before.
+
+<img src="docs/screenshots/submissions.png" alt="Submission history with verdict, language, and runtime" width="100%" />
+
+Editorials stay locked until I have attempted the problem. After the first submit, the write-up, discussions, and my private notes are all in the same workspace tabs.
+
+## How a submission actually works
+
+```text
+Browser  →  API  →  Queue  →  Worker  →  Judge0 / Docker
+                ↘ PENDING row
+                              ↘ RUNNING
+                                           ↘ AC / WA / TLE / RE / CE
+```
+
+1. I submit from the workspace.
+2. The API authenticates, validates the problem, language, and payload, then writes a `PENDING` row.
+3. The submission id is pushed onto Redis / BullMQ.
+4. A worker — a different process, preferably a different machine — marks it `RUNNING`.
+5. The worker runs the saved test cases through Judge0 or a local Docker executor.
+6. Output is compared with expected output, or a custom checker is used when exact matching is not enough.
+7. The final verdict is saved. The UI follows the row over SSE, with polling as a fallback.
+
+That split is the whole product. The editor, contests, and editorials sit around it.
+
+## Contests and rating
+
+Contests have a live window. Submissions are accepted only while the round is open. Past rounds stay available for upsolve. Registration is persisted, and the problemset is the same workspace I use for practice.
+
+<img src="docs/screenshots/contests.png" alt="Contest list with live, upcoming, and past rounds" width="100%" />
+
+<img src="docs/screenshots/contest.png" alt="Live contest problemset with register state" width="100%" />
+
+The global board is a snapshot of rating, title, and solved count. My row is highlighted so I can see where I sit without hunting.
+
+<img src="docs/screenshots/leaderboard.png" alt="Global leaderboard with rating titles" width="100%" />
+
+The profile is the long view: rating history, easy/medium/hard split, a heatmap, and the recent verdicts.
+
+<img src="docs/screenshots/profile.png" alt="Profile with rating chart, solved split, and heatmap" width="100%" />
+
+## Tech stack
+
+| Area | What I used |
+| --- | --- |
+| Frontend | React, Vite, TypeScript, Tailwind CSS, Monaco Editor |
+| Backend | Node.js, Express, TypeScript, Prisma |
+| Database | PostgreSQL |
+| Queue | Redis with BullMQ |
+| Execution | Judge0, Docker executor, mock executor for tests |
+| Other | JWT auth, Zod, Swagger, Pino |
+
+## Judge modes
+
+| Mode | When I use it |
+| --- | --- |
+| `mock` | Tests and controlled demos. It does not execute user code. |
+| `docker` | Local containers on my machine. |
+| `judge0` | Real execution. This is the main path. |
+
+## What I implemented
+
+**Workspace**
+- Problem list with filters, tags, difficulty, and solved status
+- Stats: acceptance rate, solved count, submission count, richer sorting
+- Daily challenge, curated sets, and next-problem recommendation
+- Study plans with ordered problems, daily unlock, badges, and a revision queue
+- Resizable panels, Monaco, sample run, custom input, and submit
+- Editor settings: theme, font size, tab size, word wrap, minimap, reset, autosave
+- Tabs for description, editorial, submissions, solutions, discussions, and notes
+- Editorials unlock after a logged-in attempt; admins can still preview drafts
+
+**Judge**
+- Queued submissions with `PENDING`, `RUNNING`, and a final verdict
+- Live status over SSE, with polling fallback
+- Redis pub/sub live events when `REDIS_URL` is set
+- Submission history filters and comparison with a previous attempt
+- Approximate runtime / memory percentile
+- Accepted solutions can be shared as persisted posts with visibility and votes
+- Language catalog from the database, with Judge0 language sync
+- Custom checkers when exact output matching is not enough
+- Test-case generation with a generator, reference solution, and validator
+
+**Contests and people**
+- Contests, registration, upsolve, leaderboard, and clarifications
+- Submissions accepted only during the live window
+- Virtual contest and mock interview practice pages
+- Global and per-problem leaderboards
+- Public profiles, badges, country/global rank, rating history, topic strength, submission calendar, activity, and follows
+- Notifications for follows, solution votes, and report updates
+
+**Admin**
+- Problem creation with sample and hidden tests, including draft and archived states
+- User, language, contest, preview, testcase validation, and monitoring pages
+- Launch analytics, moderation queues, audit logs, backups, health snapshots
+- Rejudge for one submission or a filtered error batch
+- Swagger at `/api-docs`
+
+## Project structure
 
 ```text
 apps/api      Express API, Prisma, queues, workers, executors
 apps/web      React frontend
-docs/         Notes about architecture, setup, testing, and API behavior
+docs/         Architecture, setup, testing, API notes
 docker/       API and web Dockerfiles
-examples/     Example generator, checker, and reference scripts
-scripts/      Local Judge0 helper scripts
+examples/     Generator, checker, and reference scripts
+scripts/      Local Judge0 helpers
 ```
 
-Backend flow:
+Backend flow: `routes → controllers → services → repositories`  
+Frontend flow: `pages/features → components → API services → backend`
 
-```text
-routes -> controllers -> services -> repositories
-```
+## Running locally
 
-Frontend flow:
-
-```text
-pages/features -> components -> API services -> backend
-```
-
-## Running Locally
-
-Requirements:
-
-- Node.js 20+
-- PostgreSQL
-- Redis
-- Judge0 only if you want real code execution
-
-Setup:
+Requirements: Node.js 20+, PostgreSQL, Redis. Judge0 only if I want real execution.
 
 ```bash
 npm install
 cp .env.example .env
 ```
 
-Update `.env` with at least:
+`.env` needs at least:
 
 ```text
 DATABASE_URL=...
@@ -109,7 +152,7 @@ JWT_ACCESS_SECRET=...
 JWT_REFRESH_SECRET=...
 ```
 
-Then run:
+Then:
 
 ```bash
 npm run db:generate
@@ -118,49 +161,32 @@ npm run db:seed
 npm run dev
 ```
 
-Local URLs:
+- Web: `http://localhost:5173`
+- API: `http://localhost:4000`
+- Swagger: `http://localhost:4000/api-docs`
 
-- Web: http://localhost:5173
-- API: http://localhost:4000
-- Swagger: http://localhost:4000/api-docs
+### Demo accounts
 
-## Demo Accounts
-
-Seed data includes demo accounts.
-
-| Role  | Email             | Password |
-| ----- | ----------------- | -------- |
+| Role | Email | Password |
+| --- | --- | --- |
 | Admin | admin@example.com | password |
-| User  | user@example.com  | password |
+| User | user@example.com | password |
 
-Some older seed data also uses:
+Older seed data also uses `admin@codearena.dev` / `Password123!` and `demo@codearena.dev` / `Password123!`.
 
-- `admin@codearena.dev` / `Password123!`
-- `demo@codearena.dev` / `Password123!`
-
-## Docker Compose
-
-For local container setup:
+### Docker Compose
 
 ```bash
 docker compose up --build
-```
-
-Migrations and seed are still manual:
-
-```bash
 npm run db:migrate
 npm run db:seed
 ```
 
-## Judge0 Setup
+### Judge0
 
-For real submissions, I use Judge0. Mock mode is only for tests and controlled demos.
+On my Windows machine, running Judge0 through Docker Desktop / WSL caused issues, so I used a Linux VM and pointed the app at that VM.
 
-On my Windows machine, running Judge0 through Docker Desktop/WSL caused issues, so I used a Linux VM
-and pointed the app to that VM.
-
-Inside the Linux VM:
+Inside the VM:
 
 ```bash
 chmod +x scripts/bootstrap-judge0-linux-vm.sh
@@ -174,42 +200,11 @@ npm run judge0:local:connect -- -Judge0BaseUrl http://<VM_IP>:2358
 npm run dev
 ```
 
-More notes are in [docs/LOCAL_JUDGE0_SETUP.md](docs/LOCAL_JUDGE0_SETUP.md).
-
-## Useful Commands
-
-```bash
-npm run dev
-npm run lint
-npm run typecheck
-npm test
-npm run build
-npm run db:migrate
-npm run db:migrate:deploy
-npm run db:seed
-npm run judge0:health
-npm run languages:sync:judge0
-npm run leaderboard:snapshot
-```
-
-## How Submission Works
-
-1. User submits code from the problem workspace.
-2. API validates auth, problem, language, and executor support.
-3. API creates a submission with `PENDING` status.
-4. Submission id is added to the queue.
-5. Worker picks the job and marks it `RUNNING`.
-6. Worker runs the saved judge test cases using Judge0 or Docker.
-7. Output is compared with expected output, or a custom checker is used.
-8. Final verdict is saved.
-9. Frontend receives updates through SSE or polling.
-
-User code is never executed inside the Express request handler.
+More notes: [docs/LOCAL_JUDGE0_SETUP.md](docs/LOCAL_JUDGE0_SETUP.md).
 
 ## Testing
 
-The API tests use in-memory repositories and a mock executor, so tests do not need PostgreSQL,
-Redis, Docker, or Judge0.
+API tests use in-memory repositories and the mock executor, so they do not need PostgreSQL, Redis, Docker, or Judge0.
 
 ```bash
 npm run lint
@@ -217,43 +212,35 @@ npm run typecheck
 npm test
 ```
 
-Current test coverage includes auth, problem APIs, submissions, queue/worker flow, contests,
-leaderboards, discussions, language selection, Judge0 mapping, custom checkers, test-case generation,
-solution sharing, follows, notifications, reports, audit logs, monitoring, backups, and ratings.
+Coverage includes auth, problems, submissions, the queue/worker flow, contests, leaderboards, discussions, language selection, Judge0 mapping, custom checkers, test-case generation, solution sharing, follows, notifications, reports, audit logs, monitoring, backups, and ratings.
 
 ## Docs
 
-| File                                                           | Content                                           |
-| -------------------------------------------------------------- | ------------------------------------------------- |
-| [docs/API_SPEC.md](docs/API_SPEC.md)                           | API routes and response shape                     |
-| [docs/AUTH_FLOW.md](docs/AUTH_FLOW.md)                         | JWT and refresh-token flow                        |
-| [docs/DATABASE_SCHEMA.md](docs/DATABASE_SCHEMA.md)             | Prisma models and indexes                         |
-| [docs/HLD.md](docs/HLD.md)                                     | High-level design notes                           |
-| [docs/LLD.md](docs/LLD.md)                                     | Low-level design notes                            |
-| [docs/JUDGE_ARCHITECTURE.md](docs/JUDGE_ARCHITECTURE.md)       | Judge, executor, and verdict flow                 |
-| [docs/LANGUAGE_SYSTEM.md](docs/LANGUAGE_SYSTEM.md)             | Language catalog and execution profiles           |
-| [docs/TESTCASE_GENERATION.md](docs/TESTCASE_GENERATION.md)     | Generator, reference, validator, and checker flow |
-| [docs/LOCAL_JUDGE0_SETUP.md](docs/LOCAL_JUDGE0_SETUP.md)       | Local Judge0 setup notes                          |
-| [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)                       | Deployment checklist and production notes         |
-| [docs/TESTING.md](docs/TESTING.md)                             | Test strategy                                     |
-| [docs/FRONTEND_ARCHITECTURE.md](docs/FRONTEND_ARCHITECTURE.md) | Frontend pages and component structure            |
-| [docs/FEATURE_ROADMAP.md](docs/FEATURE_ROADMAP.md)             | Live-launch feature roadmap                       |
-| [docs/LEARNINGS.md](docs/LEARNINGS.md)                         | Things I learned while building this              |
+| File | Content |
+| --- | --- |
+| [docs/API_SPEC.md](docs/API_SPEC.md) | Routes and response shape |
+| [docs/AUTH_FLOW.md](docs/AUTH_FLOW.md) | JWT and refresh tokens |
+| [docs/DATABASE_SCHEMA.md](docs/DATABASE_SCHEMA.md) | Prisma models and indexes |
+| [docs/HLD.md](docs/HLD.md) | High-level design |
+| [docs/LLD.md](docs/LLD.md) | Low-level design |
+| [docs/JUDGE_ARCHITECTURE.md](docs/JUDGE_ARCHITECTURE.md) | Judge, executor, verdicts |
+| [docs/LANGUAGE_SYSTEM.md](docs/LANGUAGE_SYSTEM.md) | Language catalog |
+| [docs/TESTCASE_GENERATION.md](docs/TESTCASE_GENERATION.md) | Generator, reference, checker |
+| [docs/LOCAL_JUDGE0_SETUP.md](docs/LOCAL_JUDGE0_SETUP.md) | Local Judge0 |
+| [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | Production notes |
+| [docs/TESTING.md](docs/TESTING.md) | Test strategy |
+| [docs/FRONTEND_ARCHITECTURE.md](docs/FRONTEND_ARCHITECTURE.md) | Frontend structure |
+| [docs/FEATURE_ROADMAP.md](docs/FEATURE_ROADMAP.md) | What is still open |
+| [docs/LEARNINGS.md](docs/LEARNINGS.md) | What I learned while building this |
 
-## Current Limitations
+## Still open
 
 - No plagiarism detection yet
 - Multi-file submissions are not supported
-- Virtual contest history and mock interview reports are browser-local until backed by database models
-- Helpful comment markers are browser-local until backed by moderation/community tables
-- Frozen contest standings are still roadmap items
-- Docker compose does not auto-run migrations
-- Local/test live events use the in-memory event bus; deployed Redis mode should run API and worker with the same `REDIS_URL`
-- Some large frontend pages can still be split further
-- Screenshots and hosted demo are still pending
+- Virtual contest history and mock interview reports are still browser-local
+- Helpful comment markers are still browser-local
+- Frozen contest standings are not done
+- Docker Compose does not auto-run migrations
+- Deployed Redis mode needs the API and worker on the same `REDIS_URL`
 
-## Why I Built This
-
-I built this project to go beyond a normal CRUD app and learn how systems like online judges work.
-The main focus was on backend flow, code execution safety boundaries, queues, validation, hidden tests,
-and making the frontend usable enough to demonstrate the complete flow.
+I built this to go past a normal CRUD app and learn the boundaries that make a judge safe: queues, hidden tests, workers, and a frontend that can actually show the verdict arriving.
